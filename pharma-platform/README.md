@@ -7,7 +7,7 @@ biopharmaceutical, vaccine, medical device, cosmetics, and nutraceutical manufac
 The design is original. It takes nothing from any vendor's proprietary code, schema, or documentation.
 Capability comparisons with commercial products are about functional scope only.
 
-**To install or run it, see [INSTALL.md](INSTALL.md).**
+**To install or run it, see [INSTALL.md](INSTALL.md), or run the wizard: `./install.sh`.**
 
 ## What is in this repository
 

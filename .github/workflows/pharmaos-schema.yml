@@ -89,3 +89,36 @@ jobs:
         run: npx ng test --watch=false
       - name: Production build (strict templates)
         run: npx ng build
+
+  installer:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    defaults:
+      run:
+        working-directory: pharma-platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run the installation wizard end to end (frontend covered by the web job)
+        run: ./install.sh --non-interactive --pg-host localhost --db pharmaos_ci --skip-web
+      - name: Report must exist, verify and contain no failed checks
+        run: |
+          r=$(ls install-reports/install-report-*.md)
+          (cd install-reports && sha256sum -c "$(basename "$r").sha256")
+          if grep -E '\| FAIL \|' "$r"; then echo "Report contains failed checks"; exit 1; fi
+          grep -q 'SMOKE' "$r"
