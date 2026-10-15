@@ -4,6 +4,7 @@ using PharmaOS.Gxp;
 using PharmaOS.Persistence;
 using PharmaOS.Platform.Host;
 using PharmaOS.Platform.Host.Audit;
+using PharmaOS.Platform.Host.ESignature;
 using PharmaOS.Platform.Host.MasterData;
 using PharmaOS.Platform.Host.Security;
 
@@ -20,7 +21,11 @@ builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
     .AddPermissionPolicy(Permissions.UomRead)
     .AddPermissionPolicy(Permissions.UomWrite)
-    .AddPermissionPolicy(Permissions.AuditTrailRead);
+    .AddPermissionPolicy(Permissions.AuditTrailRead)
+    .AddPermissionPolicy(Permissions.EsigSign);
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<ISignableSource, UomSignable>();
+builder.Services.AddSingleton<SignableRegistry>();
 
 // Connection strings are resolved lazily so test hosts and environments can override them.
 builder.Services.AddDbContext<PlatformDbContext>((sp, o) =>
@@ -47,6 +52,7 @@ app.MapGet("/health/ready", async (PlatformDbContext db, CancellationToken ct) =
 app.MapBffEndpoints();
 app.MapUomEndpoints();
 app.MapAuditEndpoints();
+app.MapEsigEndpoints();
 
 app.Run();
 

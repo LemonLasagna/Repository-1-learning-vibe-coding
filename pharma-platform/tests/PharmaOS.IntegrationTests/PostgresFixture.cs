@@ -28,6 +28,9 @@ public sealed class PostgresFixture : IAsyncLifetime
     public string AppConnectionString { get; private set; } = "";
     public string AuditConnectionString { get; private set; } = "";
 
+    /// <summary>Superuser on the test database, for assertions that must see past RLS.</summary>
+    public string AdminConnectionString { get; private set; } = "";
+
     public async Task InitializeAsync()
     {
         await using (var admin = new NpgsqlConnection(_admin))
@@ -58,6 +61,7 @@ public sealed class PostgresFixture : IAsyncLifetime
                 """);
         }
 
+        AdminConnectionString = dbAdmin.ConnectionString;
         AppConnectionString = new NpgsqlConnectionStringBuilder(_admin)
             { Database = DatabaseName, Username = "pharmaos_app_login", Password = AppPassword }.ConnectionString;
         AuditConnectionString = new NpgsqlConnectionStringBuilder(_admin)

@@ -35,9 +35,10 @@ The web application never handles OIDC tokens. Implemented in `src/Hosts/PharmaO
 | Machine clients | `Authorization: Bearer` (audience `pharmaos-api`) is still accepted; a policy scheme picks bearer or cookie per request |
 | Claims | `sub`, `preferred_username`, `name`, `tenant_id` (user attribute, admin-only in the Keycloak user profile), `perm` (client roles, multivalued), `sid`, `auth_time` |
 
-The e-signature service will require a fresh `auth_time` (within a short window) bound to the signature,
-so the password for a signature is typed at Keycloak, not in the application. Until that service exists,
-the e-signature dialog in the Deviation demo still collects a password locally and sends it nowhere.
+Electronic signatures use this re-authentication (doc 10 §10.5). The password for a signature is typed at
+Keycloak, never in the application, and the server accepts the signature only if Keycloak's `auth_time`
+falls after the signing request was issued. Executing signatures needs the permission `esig.sign`, granted
+in Keycloak only after the person's identity has been verified.
 
 A development realm with test users ships in `deploy/keycloak/dev-import/` (INSTALL.md, A5). It contains
 known passwords and a fixed client secret and must never be imported into TEST, VAL or PROD. Production

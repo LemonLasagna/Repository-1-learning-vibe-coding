@@ -137,7 +137,7 @@ PHARMAOS_TEST_PG="Host=localhost;Username=postgres;Password=postgres" \
 ```
 
 The integration tests create and then drop their own throw-away database (`pharmaos_it_…`). They do
-not touch `pharmaos_dev`. Expected: 85 unit tests and 25 integration tests pass.
+not touch `pharmaos_dev`. Expected: 94 unit tests and 34 integration tests pass.
 
 ### A5. Start Keycloak and run the backend
 
@@ -159,12 +159,18 @@ The realm `pharmaos` (`deploy/keycloak/dev-import/pharmaos-realm.json`) contains
 
 | User | Password | Permissions |
 |---|---|---|
-| `qa.analyst` (Quinn Analyst) | `Dev-Only-Pass-2026` | read and change units of measure, read the audit trail |
+| `qa.analyst` (Quinn Analyst) | `Dev-Only-Pass-2026` | read and change units of measure, read the audit trail, sign |
+| `qa.approver` (Avery Approver) | `Dev-Only-Pass-2026` | read units of measure and the audit trail, sign |
 | `read.only` (Riley Reader) | `Dev-Only-Pass-2026` | read units of measure only |
 
 Permissions are Keycloak client roles of `pharmaos-web`, sent as the `perm` claim. The tenant is the
-user attribute `tenant_id`, which only an administrator can set. Keycloak keeps the dev realm in memory,
-so changes in the admin console are lost on restart: change the JSON file instead.
+user attribute `tenant_id`, which only an administrator can set. `esig.sign` allows electronic signatures;
+in production, grant it only after the person's identity has been verified.
+
+The realm is imported only when it does not exist yet. After editing the JSON, re-import it: with Docker,
+`docker compose -f deploy/keycloak/docker-compose.dev.yml down` and `up -d` again; without Docker, stop
+Keycloak, delete `keycloak-26.8.1/data/h2`, and start it again. Changes made in the admin console are not
+written back to the JSON.
 
 **Backend.** Use the same passwords as in A3. `ASPNETCORE_ENVIRONMENT=Development` loads
 `appsettings.Development.json`, which points at the local Keycloak over plain HTTP:
@@ -188,7 +194,7 @@ curl -i http://localhost:5080/api/mdm/v1/uoms | head -1   # HTTP/1.1 401 Unautho
 ```bash
 cd web
 npm ci                                   # exact versions from package-lock.json
-npx ng test --watch=false                # expect: 72 passed
+npx ng test --watch=false                # expect: 77 passed
 npx ng build                             # production build with strict template checks
 npx ng serve                             # http://localhost:4200
 ```
@@ -199,11 +205,15 @@ npx ng serve                             # http://localhost:4200
 - Press **Sign in**. Keycloak asks for a user name and password; use `qa.analyst` from the table in A5.
 - **Units of measure**: create a unit, open it, change the name with a reason for change. The audit trail
   shows "Quinn Analyst (qa.analyst)" as the actor.
+- **Electronic signature**: as `qa.analyst`, press **Sign as Approved…** on the unit you just changed. It is
+  refused: the last editor of a version cannot approve it. Sign out, sign in as `qa.approver`, open the same
+  unit and sign as Approved. The sign-in page asks for the password again, even though you are signed in, and
+  the signature appears with its manifest. Change the unit again and the signature is shown as applying to an
+  older version.
 - Sign in as `read.only` to see the server refuse changes (403).
 - **Deviation (demo)** works fully. It is generated from `web/public/metadata/deviation.bundle.json`
   and needs no API. Try ticking "Planned deviation", changing the classification, and pressing
-  "Submit for QA review" to see the e-signature dialog. Nothing is saved. (This demo dialog still asks for
-  the password itself; real signatures will re-authenticate at Keycloak through `/bff/reauth`.)
+  "Submit for QA review" to see the e-signature dialog. Nothing is saved: Deviation records are not stored yet.
 
 **End-to-end sign-in test.** With Keycloak, the backend and `ng serve` running:
 
@@ -212,8 +222,9 @@ cd web && CHROMIUM_PATH=/path/to/chrome npm run e2e
 ```
 
 It signs in through the Keycloak page, checks that no token is visible to JavaScript, creates and edits a
-unit of measure, checks the audit actor, re-authenticates, signs out, and checks that `read.only` cannot
-write. The CI job `e2e` runs the same test.
+unit of measure, checks the audit actor, checks that the editor cannot approve, re-authenticates, signs out,
+checks that `read.only` cannot write, and has `qa.approver` approve the unit with a Keycloak password prompt.
+The CI job `e2e` runs the same test.
 
 ### A7. Changing the data model
 
