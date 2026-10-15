@@ -100,13 +100,16 @@ describe('Deviation screens', () => {
     if (esig) fixture.componentRef.setInput('esig', esig);
     fixture.detectChanges();
     http.expectOne('/metadata/deviation.bundle.json').flush(bundle);
-    if (user.permissions.includes('esig.sign')) http.expectOne('/api/esig/v1/meanings?entity=qms.deviation').flush(options);
     const completion = esig ? http.expectOne(`/api/esig/v1/challenges/${esig}/complete`) : null;
     const loadAll = async () => {
       http.expectOne(`/api/qms/v1/deviations/${d.id}`).flush(d, { headers: { ETag: `"${d.rowVersion}"` } });
-      http.expectOne(`/api/qms/v1/deviations/${d.id}/actions`).flush(actions);
+      http.expectOne(`/api/qms/v1/deviations/${d.id}/available-actions`).flush(actions);
       http.expectOne(`/api/qms/v1/deviations/${d.id}/history`).flush([]);
       await fixture.whenStable();
+      // The workflow panel loads the signing options once the record is shown (only for those who may sign).
+      if (user.permissions.includes('esig.sign')) {
+        http.match('/api/esig/v1/meanings?entity=qms.deviation').forEach((r) => r.flush(options));
+      }
       http.expectOne(`/api/esig/v1/records/qms.deviation/${d.id}/signatures`).flush({ currentVersion: d.rowVersion, items: [] });
       http.expectOne(`/api/audit/v1/records/qms/deviation/${d.id}`).flush([]);
       await fixture.whenStable();
@@ -174,7 +177,7 @@ describe('Deviation screens', () => {
     expect(req.request.body).toEqual({ action: 'reject', reason: 'Add the maintenance record' });
     req.flush({ ...deviation, status: 'INVESTIGATION', rowVersion: 6 }, { headers: { ETag: '"6"' } });
     http.expectOne('/api/qms/v1/deviations/d1').flush({ ...deviation, status: 'INVESTIGATION', rowVersion: 6 }, { headers: { ETag: '"6"' } });
-    http.expectOne('/api/qms/v1/deviations/d1/actions').flush({ state: 'INVESTIGATION', editableFields: [], reasonForChangeRequired: true, actions: [] });
+    http.expectOne('/api/qms/v1/deviations/d1/available-actions').flush({ state: 'INVESTIGATION', editableFields: [], reasonForChangeRequired: true, actions: [] });
     http.expectOne('/api/qms/v1/deviations/d1/history').flush([]);
     await fixture.whenStable();
     http.expectOne('/api/esig/v1/records/qms.deviation/d1/signatures').flush({ currentVersion: 6, items: [] });

@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json.Nodes;
 using Npgsql;
 using NpgsqlTypes;
@@ -20,7 +19,9 @@ public sealed class DeviationStore(NpgsqlConnection conn, NpgsqlTransaction tx)
         SELECT d.id, d.site_id, s.code, d.deviation_no, d.title, d.description, d.classification, d.deviation_type, d.is_planned,
                d.occurred_at, d.discovered_at, d.immediate_action, d.impact_assessment, d.root_cause_summary, d.risk_score,
                d.owner_id, o.display_name, d.qa_owner_id, q.display_name, d.due_date, d.closed_at, d.status, d.workflow_instance_id,
-               d.ext::text, d.row_version, d.updated_at, d.updated_by
+               d.ext::text, d.row_version, d.updated_at, d.updated_by,
+               (SELECT count(*)::int FROM qms.capa c
+                 WHERE c.source_type = 'DEVIATION' AND c.source_id = d.id AND c.status IN ('DRAFT', 'PLAN_REVIEW'))
           FROM qms.deviation d
           JOIN org.site s ON s.id = d.site_id
           LEFT JOIN iam.app_user o ON o.id = d.owner_id
@@ -43,35 +44,8 @@ public sealed class DeviationStore(NpgsqlConnection conn, NpgsqlTransaction tx)
         return await cmd.ExecuteScalarAsync(ct) is not null;
     }
 
-    /// <summary>
-    /// Next DEV-yyyy-nnnnn. The counter row is locked by the upsert until commit, so numbers are unique and,
-    /// because a rolled-back creation also rolls back the counter, gap-free.
-    /// </summary>
-    public async Task<string> NextNumberAsync(GxpContext ctx, int year, CancellationToken ct)
-    {
-        await using (var cmd = Cmd("""
-            INSERT INTO meta.numbering_scheme (tenant_id, code, pattern, reset_policy, site_scoped, created_by, updated_by)
-            VALUES (@tenant, 'DEVIATION', 'DEV-{yyyy}-{seq:5}', 'YEARLY', false, @user, @user)
-            ON CONFLICT (tenant_id, code) DO NOTHING
-            """))
-        {
-            cmd.Parameters.AddWithValue("tenant", ctx.TenantId);
-            cmd.Parameters.AddWithValue("user", ctx.UserId);
-            await cmd.ExecuteNonQueryAsync(ct);
-        }
-        await using var next = Cmd("""
-            INSERT INTO meta.numbering_sequence (tenant_id, numbering_scheme_id, scope_key, current_value, created_by, updated_by)
-            SELECT @tenant, id, @year, 1, @user, @user FROM meta.numbering_scheme WHERE code = 'DEVIATION'
-            ON CONFLICT (tenant_id, numbering_scheme_id, scope_key)
-            DO UPDATE SET current_value = meta.numbering_sequence.current_value + 1
-            RETURNING current_value
-            """);
-        next.Parameters.AddWithValue("tenant", ctx.TenantId);
-        next.Parameters.AddWithValue("year", year.ToString(CultureInfo.InvariantCulture));
-        next.Parameters.AddWithValue("user", ctx.UserId);
-        var n = Convert.ToInt64(await next.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
-        return $"DEV-{year}-{n:D5}";
-    }
+    public Task<string> NextNumberAsync(GxpContext ctx, int year, CancellationToken ct) =>
+        NumberingStore.NextAsync(conn, tx, ctx, "DEVIATION", "DEV", year, ct);
 
     public async Task InsertAsync(
         GxpContext ctx, Guid id, string number, Guid workflowInstanceId, string status, IReadOnlyDictionary<string, object?> columns,
@@ -142,20 +116,13 @@ public sealed class DeviationStore(NpgsqlConnection conn, NpgsqlTransaction tx)
         return await cmd.ExecuteNonQueryAsync(ct) == 1;
     }
 
-    /// <summary>The reason recorded by the audit trigger for the next changes in this transaction.</summary>
-    public async Task SetChangeReasonAsync(string? reason, CancellationToken ct)
-    {
-        await using var cmd = Cmd("SELECT set_config('app.change_reason', @reason, true)");
-        cmd.Parameters.AddWithValue("reason", reason ?? "");
-        await cmd.ExecuteScalarAsync(ct);
-    }
-
     private static DeviationRow Read(NpgsqlDataReader r) => new(
         r.GetGuid(0), r.GetGuid(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5), r.GetString(6), r.GetString(7),
         r.GetBoolean(8), r.GetFieldValue<DateTimeOffset>(9), r.GetFieldValue<DateTimeOffset>(10), Str(r, 11), Str(r, 12), Str(r, 13),
         r.IsDBNull(14) ? null : r.GetInt32(14), r.GetGuid(15), Str(r, 16), r.IsDBNull(17) ? null : r.GetGuid(17), Str(r, 18),
         r.GetFieldValue<DateOnly>(19), r.IsDBNull(20) ? null : r.GetFieldValue<DateTimeOffset>(20), r.GetString(21),
-        r.IsDBNull(22) ? null : r.GetGuid(22), r.GetString(23), r.GetInt32(24), r.GetFieldValue<DateTimeOffset>(25), r.GetGuid(26));
+        r.IsDBNull(22) ? null : r.GetGuid(22), r.GetString(23), r.GetInt32(24), r.GetFieldValue<DateTimeOffset>(25), r.GetGuid(26),
+        r.GetInt32(27));
 
     private static string? Str(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);
 }

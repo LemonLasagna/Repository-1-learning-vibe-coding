@@ -27,5 +27,20 @@ export const routes: Routes = [
     title: 'Deviation · PharmaOS',
     loadComponent: () => import('./features/deviation/deviation-pages').then((m) => m.DeviationDetailPage),
   },
+  {
+    path: 'capas',
+    title: 'CAPA · PharmaOS',
+    loadComponent: () => import('./features/capa/capa-pages').then((m) => m.CapaListPage),
+  },
+  {
+    path: 'capas/new',
+    title: 'New CAPA · PharmaOS',
+    loadComponent: () => import('./features/capa/capa-pages').then((m) => m.CapaCreatePage),
+  },
+  {
+    path: 'capas/:id',
+    title: 'CAPA · PharmaOS',
+    loadComponent: () => import('./features/capa/capa-pages').then((m) => m.CapaDetailPage),
+  },
   { path: '**', redirectTo: 'uoms' },
 ];

@@ -2,6 +2,7 @@ import { HttpClient, HttpHeaders, HttpResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { map, Observable } from 'rxjs';
 import { Json } from '../rules/rule-evaluator';
+import { AvailableAction } from '../../shared/workflow-panel';
 import { APP_CONFIG, Versioned } from './api';
 
 export interface Site {
@@ -41,15 +42,8 @@ export interface Deviation {
   updatedAt: string;
 }
 
-export interface DeviationAction {
-  action: string;
-  label: string;
-  to: string;
-  signatureMeaning: string | null;
-  requiresReason: boolean;
-  /** Why the action cannot be taken yet (a guard), or null. */
-  blockedBy: string | null;
-}
+/** A workflow action the user may see; see the shared workflow panel. */
+export type DeviationAction = AvailableAction;
 
 export interface DeviationActions {
   state: string;
@@ -169,7 +163,7 @@ export class DeviationApi {
   }
 
   actions(id: string): Observable<DeviationActions> {
-    return this.http.get<DeviationActions>(`${this.base}/${id}/actions`);
+    return this.http.get<DeviationActions>(`${this.base}/${id}/available-actions`);
   }
 
   history(id: string): Observable<HistoryEntry[]> {

@@ -26,10 +26,13 @@ builder.Services.AddAuthorizationBuilder()
     .AddPermissionPolicy(Permissions.AuditTrailRead)
     .AddPermissionPolicy(Permissions.EsigSign)
     .AddPermissionPolicy(Permissions.DeviationRead)
-    .AddPermissionPolicy(Permissions.DeviationWrite);
+    .AddPermissionPolicy(Permissions.DeviationWrite)
+    .AddPermissionPolicy(Permissions.CapaRead)
+    .AddPermissionPolicy(Permissions.CapaWrite);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ISignableSource, UomSignable>();
 builder.Services.AddSingleton<ISignableSource, DeviationSignable>();
+builder.Services.AddSingleton<ISignableSource, CapaSignable>();
 builder.Services.AddSingleton<SignableRegistry>();
 
 // Connection strings are resolved lazily so test hosts and environments can override them.
@@ -59,6 +62,7 @@ app.MapUomEndpoints();
 app.MapAuditEndpoints();
 app.MapEsigEndpoints();
 app.MapDeviationEndpoints();
+app.MapCapaEndpoints();
 
 app.Run();
 

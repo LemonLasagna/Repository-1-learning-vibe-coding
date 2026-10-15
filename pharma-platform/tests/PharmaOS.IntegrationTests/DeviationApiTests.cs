@@ -234,7 +234,7 @@ public sealed class DeviationApiTests : IClassFixture<PostgresFixture>, IDisposa
         Assert.Equal(HttpStatusCode.Created, (await SignAsync(Owner, id, "cancel", "CANCELLED", "Raised twice; see the other deviation")).StatusCode);
         Assert.Equal("CANCELLED", await StatusOf(id));
 
-        var actions = await As(Owner).GetFromJsonAsync<JsonElement>($"/api/qms/v1/deviations/{id}/actions");
+        var actions = await As(Owner).GetFromJsonAsync<JsonElement>($"/api/qms/v1/deviations/{id}/available-actions");
         Assert.Empty(actions.GetProperty("actions").EnumerateArray());
         Assert.Empty(actions.GetProperty("editableFields").EnumerateArray());
     }
@@ -248,14 +248,14 @@ public sealed class DeviationApiTests : IClassFixture<PostgresFixture>, IDisposa
             occurredAt = DateTimeOffset.UtcNow.AddHours(-1).ToString("O"), isPlanned = true,
         })).GetProperty("id").GetGuid();
 
-        var owner = await As(Owner).GetFromJsonAsync<JsonElement>($"/api/qms/v1/deviations/{id}/actions");
+        var owner = await As(Owner).GetFromJsonAsync<JsonElement>($"/api/qms/v1/deviations/{id}/available-actions");
         var submit = owner.GetProperty("actions").EnumerateArray().Single(a => a.GetProperty("action").GetString() == "submit");
         Assert.Equal("AUTHORED", submit.GetProperty("signatureMeaning").GetString());
         Assert.Equal("A planned deviation needs a justification.", submit.GetProperty("blockedBy").GetString());
         Assert.Contains("title", owner.GetProperty("editableFields").EnumerateArray().Select(f => f.GetString()));
         Assert.False(owner.GetProperty("reasonForChangeRequired").GetBoolean());
 
-        var reader = await As(Reader).GetFromJsonAsync<JsonElement>($"/api/qms/v1/deviations/{id}/actions");
+        var reader = await As(Reader).GetFromJsonAsync<JsonElement>($"/api/qms/v1/deviations/{id}/available-actions");
         Assert.Empty(reader.GetProperty("actions").EnumerateArray());
         Assert.Empty(reader.GetProperty("editableFields").EnumerateArray());
 

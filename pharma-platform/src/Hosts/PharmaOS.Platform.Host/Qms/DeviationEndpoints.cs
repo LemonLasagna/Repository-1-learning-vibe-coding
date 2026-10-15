@@ -8,10 +8,9 @@ using PharmaOS.Gxp;
 using PharmaOS.Platform.Host.ESignature;
 using PharmaOS.Platform.Host.Workflow;
 using PharmaOS.Workflow;
+using static PharmaOS.Platform.Host.Api.ApiResults;
 
 namespace PharmaOS.Platform.Host.Qms;
-
-public sealed record TransitionRequest(string? Action, string? Reason);
 
 /// <summary>
 /// Deviations (URS-QMS-003, FS §9.3.1). Conventions as the reference slice (doc 21): ETag/If-Match, reason for change
@@ -34,7 +33,7 @@ public static class DeviationEndpoints
         group.MapPatch("{id:guid}", Update).RequireAuthorization(Permissions.DeviationRead);
         group.MapPost("{id:guid}/transitions", Transition).RequireAuthorization(Permissions.DeviationRead);
         group.MapGet("{id:guid}/history", History).RequireAuthorization(Permissions.DeviationRead);
-        group.MapGet("{id:guid}/actions", Actions).RequireAuthorization(Permissions.DeviationRead);
+        group.MapGet("{id:guid}/available-actions", Actions).RequireAuthorization(Permissions.DeviationRead);
     }
 
     private static async Task<IResult> Sites(PlatformDbContext db, CancellationToken ct)
@@ -114,7 +113,7 @@ public static class DeviationEndpoints
         var store = Store(db);
         var row = await store.GetAsync(id, forUpdate: true, ct);
         if (row is null) return Results.NotFound();
-        if (row.RowVersion != expected) return Stale();
+        if (row.RowVersion != expected) return Stale("deviation");
         if (!DeviationWorkflow.Editable.TryGetValue(row.Status, out var rule))
             return Problem(StatusCodes.Status409Conflict, "READ_ONLY", "Read-only", $"A deviation in state {row.Status} cannot be changed.");
         if (!user.PermissionsOf().Contains(rule.Permission))
@@ -137,7 +136,7 @@ public static class DeviationEndpoints
             ext = row.Ext;
             foreach (var (k, v) in extChanges) { if (v is null) ext.Remove(k); else ext[k] = v.DeepClone(); }
         }
-        if (!await store.UpdateAsync(id, expected, columns, ext, ct)) return Stale();
+        if (!await store.UpdateAsync(id, expected, columns, ext, ct)) return Stale("deviation");
         var updated = (await store.GetAsync(id, forUpdate: false, ct))!;
         await tx.CommitAsync(ct);
 
@@ -147,43 +146,11 @@ public static class DeviationEndpoints
 
     private static async Task<IResult> Transition(
         Guid id, TransitionRequest body, PlatformDbContext db, IGxpContextAccessor gxp, TimeProvider time, ClaimsPrincipal user,
-        HttpContext http, CancellationToken ct)
-    {
-        if (gxp.Current is not { } ctx) return MissingIdentity();
-        if (!TryParseIfMatch(http, out var expected)) return IfMatchRequired();
-        var reason = string.IsNullOrWhiteSpace(body.Reason) ? null : body.Reason.Trim();
-        if (reason is { Length: > 1000 })
-            return Results.ValidationProblem(new Dictionary<string, string[]> { ["reason"] = ["Maximum length is 1000."] });
-
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
-        var row = await Store(db).GetAsync(id, forUpdate: true, ct);
-        if (row is null) return Results.NotFound();
-        if (row.RowVersion != expected) return Stale();
-
-        var action = body.Action?.Trim() ?? "";
-        var decision = TransitionEvaluator.Evaluate(DeviationWorkflow.Definition, row.Status, action, row.ToRuleData(),
-            user.PermissionsOf(), signaturePresented: false);
-        if (DeviationService.Refusal(decision) is { } refused) return Problem(refused);
-        if (decision is TransitionDecision.SignatureRequired sig)
-            return Results.Problem(statusCode: StatusCodes.Status428PreconditionRequired, title: "Signature required",
-                detail: $"This step is signed as {EsigCatalog.FindMeaning(sig.Meaning)?.Label ?? sig.Meaning}. Use the e-signature service with action '{action}'.",
-                extensions: new Dictionary<string, object?> { ["code"] = "SIGNATURE_REQUIRED", ["meaning"] = sig.Meaning });
-
-        var t = TransitionEvaluator.Find(DeviationWorkflow.Definition, row.Status, action)!;
-        if (t.RequireReason && reason is null)
-            return Results.ValidationProblem(new Dictionary<string, string[]> { ["reason"] = [$"'{t.Label}' needs a reason."] });
-        var (store, esig, _) = Stores(db);
-        // The history (and the QA owner at triage) refer to the acting user's record.
-        await esig.EnsureUserAsync(ctx, user.Login(), user.DisplayName(), user.FindFirst("email")?.Value, ct);
-        if (await DeviationService.ApplyAsync(store.Connection, store.Transaction, ctx, row, t, reason, null, null, time.GetUtcNow(), ct)
-            is { } failed)
-            return Problem(failed);
-        var updated = (await store.GetAsync(id, forUpdate: false, ct))!;
-        await tx.CommitAsync(ct);
-
-        SetETag(http, updated.RowVersion);
-        return Results.Ok(DeviationResponse.From(updated));
-    }
+        HttpContext http, CancellationToken ct) =>
+        gxp.Current is not { } ctx
+            ? MissingIdentity()
+            : await WorkflowTransitions.HandleAsync(DeviationEntity.Instance, id, body, db, ctx, time, user, http,
+                async (conn, tx, rowId, c) => DeviationResponse.From((await new DeviationStore(conn, tx).GetAsync(rowId, false, c))!), ct);
 
     private static async Task<IResult> History(Guid id, PlatformDbContext db, CancellationToken ct)
     {
@@ -211,7 +178,7 @@ public static class DeviationEndpoints
             state = row.Status,
             editableFields = editable,
             reasonForChangeRequired = row.Status != DeviationWorkflow.Draft,
-            actions = DeviationService.Available(row, permissions),
+            actions = WorkflowTransitions.Available(DeviationWorkflow.Definition, row, permissions),
         });
     }
 
@@ -225,7 +192,7 @@ public static class DeviationEndpoints
             var f = DeviationFields.Find(name);
             if (f is null) { errors[name] = ["Unknown field."]; continue; }
             if (!allowed.Contains(name)) { errors[name] = ["Cannot be changed in this state."]; continue; }
-            if (!DeviationFields.TryParse(f, node, out var value, out var error)) { errors[name] = [error!]; continue; }
+            if (!FieldParser.TryParse(f, node, out var value, out var error)) { errors[name] = [error!]; continue; }
             if (f.Column is not null) columns[f.Column] = value;
             else ext[f.ExtKey!] = value switch
             {
@@ -253,27 +220,4 @@ public static class DeviationEndpoints
         var tx = (NpgsqlTransaction)db.Database.CurrentTransaction!.GetDbTransaction();
         return (new DeviationStore(conn, tx), new EsigStore(conn, tx), new WorkflowStore(conn, tx));
     }
-
-    private static void SetETag(HttpContext http, int rowVersion) =>
-        http.Response.Headers.ETag = $"\"{rowVersion.ToString(CultureInfo.InvariantCulture)}\"";
-
-    private static bool TryParseIfMatch(HttpContext http, out int version) =>
-        int.TryParse(http.Request.Headers.IfMatch.ToString().Trim().Trim('"'), NumberStyles.None, CultureInfo.InvariantCulture, out version);
-
-    private static IResult IfMatchRequired() =>
-        Problem(StatusCodes.Status428PreconditionRequired, "IF_MATCH_REQUIRED", "If-Match required",
-            "Send the ETag from your last read in the If-Match header.");
-
-    private static IResult Stale() =>
-        Problem(StatusCodes.Status412PreconditionFailed, "STALE_VERSION", "Stale version",
-            "The deviation was changed by someone else. Reload it and review the changes.");
-
-    private static IResult MissingIdentity() =>
-        Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Missing identity",
-            detail: "The session must carry 'sub' and 'tenant_id' claims.");
-
-    private static IResult Problem(ActionRefusal r) => Problem(r.Status, r.Code, r.Title, r.Detail);
-
-    private static IResult Problem(int status, string code, string title, string detail) =>
-        Results.Problem(statusCode: status, title: title, detail: detail, extensions: new Dictionary<string, object?> { ["code"] = code });
 }

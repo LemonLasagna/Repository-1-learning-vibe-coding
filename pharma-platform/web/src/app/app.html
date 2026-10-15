@@ -3,6 +3,7 @@
   <nav aria-label="Main">
     <a routerLink="/uoms" routerLinkActive="active">Units of measure</a>
     <a routerLink="/deviations" routerLinkActive="active">Deviations</a>
+    <a routerLink="/capas" routerLinkActive="active">CAPA</a>
   </nav>
   @if (auth.user(); as u) {
     <span class="who" title="Signed in as {{ u.login }}">{{ u.name ?? u.login }}</span>

@@ -81,18 +81,39 @@ Timers: 30 business days → L1 escalation; 45 → L2; due-date extension sub-pr
 | Triage | start_investigation | Investigation | `qms.deviation:triage` (becomes QA owner) | — | — |
 | Triage | cancel | Cancelled | `qms.deviation:triage` | Cancelled | Reason required |
 | Investigation | submit_for_approval | QA Approval | `qms.deviation:write` | — | Root cause; impact assessment for major/critical |
-| QA Approval | approve | Closed | `qms.deviation:approve` | Approved (four eyes: not the last editor, not an author or reviewer) | — |
+| QA Approval | approve | Closed | `qms.deviation:approve` | Approved (four eyes: not the last editor, not an author or reviewer) | Every linked CAPA has an approved plan |
 | QA Approval | reject | Investigation | `qms.deviation:approve` | — | Reason required |
 
 Signed transitions run through the e-signature service: the challenge carries the action, and the signature and
 the state change commit in one transaction. Field editability is per state and enforced by the server; a reason
 for change is required after Draft. History is written to `wf.process_history` with the signature id.
 Not yet: the major/critical branch with parallel QA and production review, timers and escalation, the
-CAPA and batch-impact guards on closure, due-date extensions, and task inboxes.
+batch-impact guard on closure, due-date extensions, and task inboxes. (`DEVIATION_STD` v2 added the CAPA guard;
+a stored v1 definition is upgraded on first use, and running instances keep the version they started with.)
 
 ### 9.3.2 Reference workflow: CAPA
 `Draft → Plan Review✍ → Plan Approved → Implementation (actions tracked) → Implementation Verified✍ →
 Effectiveness Check Pending (timer = planned date) → Effectiveness Verified✍ → Closed | Ineffective → new CAPA`
+
+**As implemented (R0).** `CapaWorkflow` (`CAPA_STD` v1) in `src/Hosts/PharmaOS.Platform.Host/Qms/`. The plan is the actions
+plus one effectiveness check; the plan-approval signature covers them (the record hash includes child records).
+
+| From | Action | To | Who (permission) | Signature | Guard / reason |
+|---|---|---|---|---|---|
+| Draft plan | submit_plan | Plan review | `qms.capa:write` | — | At least one action and the effectiveness check |
+| Draft plan | cancel | Cancelled | `qms.capa:write` | Cancelled | Reason required |
+| Plan review | approve_plan | Implementation | `qms.capa:approve` | Approved (not the last editor) | — |
+| Plan review | return_plan | Draft plan | `qms.capa:approve` | — | Reason required |
+| Plan review | cancel | Cancelled | `qms.capa:approve` | Cancelled | Reason required |
+| Implementation | verify_implementation | Effectiveness check | `qms.capa:approve` | Verified (not the last editor) | Every action done |
+| Effectiveness check | close | Closed | `qms.capa:approve` | Verified (not the last editor) | Result recorded |
+
+Actions (correction, corrective, preventive) have an assignee and due date; they are planned and withdrawn in Draft
+plan and completed with evidence during Implementation. The effectiveness check (criteria, method, planned date) is
+planned in Draft plan; its result (effective or ineffective, with evidence) is recorded in Effectiveness check. Every
+change to actions or the check advances the CAPA's version (ETag). A CAPA raised from a deviation takes its site.
+Not yet: the effectiveness timer (the planned date is recorded, not enforced), a follow-up CAPA raised automatically
+when the check is ineffective, action-level workflows, and change-control links.
 
 ### 9.3.3 Reference workflow: Change Control
 `Draft → Initial Assessment (classify; risk) → Impact Assessment (parallel per impacted area) → Approval to

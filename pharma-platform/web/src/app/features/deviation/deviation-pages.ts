@@ -2,17 +2,19 @@ import { HttpClient } from '@angular/common/http';
 import { Component, computed, inject, input, OnInit, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { forkJoin } from 'rxjs';
-import { AuthService, describeError, EsigApi, formatTimestamp, SigningOptions } from '../../core/api/api';
+import { forkJoin, of } from 'rxjs';
+import { AuthService, describeError, EsigApi, formatTimestamp } from '../../core/api/api';
+import { Capa, CapaApi, capaStateLabel } from '../../core/api/capa-api';
 import {
-  apiField, DEVIATION_STATES, Deviation, DeviationAction, DeviationActions, DeviationApi, HistoryEntry, Site, stateLabel,
+  apiField, DEVIATION_STATES, Deviation, DeviationActions, DeviationApi, HistoryEntry, Site, stateLabel,
   toApiBody, toFormValue,
 } from '../../core/api/deviation-api';
 import { MetadataForm } from '../../core/metadata/metadata-form';
 import { Access, RuntimeBundle } from '../../core/metadata/runtime-bundle';
 import { AuditTrail } from '../../shared/audit-trail';
-import { EsigDialog, SignConfirmation, SignIntent } from '../../shared/esig-dialog';
+import { HistoryTable } from '../../shared/history-table';
 import { Signatures } from '../../shared/signatures';
+import { WorkflowPanel } from '../../shared/workflow-panel';
 
 const BUNDLE_URL = '/metadata/deviation.bundle.json';
 
@@ -174,12 +176,12 @@ export class DeviationCreatePage implements OnInit {
 }
 
 /**
- * One deviation: the configured form (editable as the server allows in this state), the workflow actions, signing,
- * and the record's history, signatures and audit trail.
+ * One deviation: the configured form (editable as the server allows in this state), the workflow actions and signing,
+ * linked CAPAs, and the record's history, signatures and audit trail.
  */
 @Component({
   selector: 'pos-deviation-detail',
-  imports: [FormsModule, MetadataForm, RouterLink, AuditTrail, EsigDialog, Signatures],
+  imports: [FormsModule, MetadataForm, RouterLink, AuditTrail, Signatures, WorkflowPanel, HistoryTable],
   template: `
     <p><a routerLink="/deviations">← Deviations</a></p>
     @if (error()) {<p class="banner error" role="alert">{{ error() }}</p>}
@@ -215,83 +217,51 @@ export class DeviationCreatePage implements OnInit {
         }
       }
 
-      @if (actions()?.actions?.length) {
-        <section class="workflow" aria-label="Actions">
-          @for (a of actions()!.actions; track a.action) {
-            <div class="action">
-              <button type="button" [class.secondary]="a.action === 'cancel' || a.action === 'reject'"
-                [disabled]="busy() || !!a.blockedBy" (click)="start(a)">
-                {{ a.label }}@if (a.signatureMeaning) { ✍}</button>
-              @if (a.blockedBy) {<small>{{ a.blockedBy }}</small>}
-            </div>
-          }
-        </section>
-      }
+      <pos-workflow-panel entity="qms.deviation" [recordId]="d.id" [recordLabel]="d.deviationNo" [recordVersion]="d.rowVersion"
+        [actions]="actions()?.actions ?? []" [returnPath]="'/deviations/' + d.id" [blocked]="unsaved"
+        [transition]="transition" (done)="afterTransition($event)" (failed)="fail($event)" />
 
-      @if (reasonFor(); as a) {
-        <div class="reason-panel" role="group" aria-label="Reason">
-          <label>Reason for "{{ a.label }}" <span class="req">*</span>
-            <textarea name="transitionReason" rows="2" maxlength="1000" [(ngModel)]="transitionReason"></textarea></label>
-          <div class="buttons">
-            <button type="button" class="secondary" (click)="reasonFor.set(null)">Cancel</button>
-            <button type="button" [disabled]="!transitionReason.trim() || busy()" (click)="run(a, transitionReason.trim())">Confirm</button>
-          </div>
-        </div>
-      }
+      <section aria-labelledby="capa-title">
+        <h2 id="capa-title">CAPAs</h2>
+        @if (capas().length) {
+          <ul class="capas">
+            @for (c of capas(); track c.id) {
+              <li><a [routerLink]="['/capas', c.id]">{{ c.capaNo }}</a> {{ c.title }} · {{ capaLabel(c.status) }}</li>
+            }
+          </ul>
+        } @else {
+          <p>None linked.</p>
+        }
+        @if (canRaiseCapa()) {
+          <a class="button secondary" [routerLink]="['/capas/new']" [queryParams]="{ sourceId: d.id }">Raise CAPA</a>
+        }
+      </section>
 
       <section aria-labelledby="hist-title">
         <h2 id="hist-title">Workflow history</h2>
-        <table>
-          <thead><tr><th>When</th><th>Step</th><th>By</th><th>Signature</th><th>Comment</th></tr></thead>
-          <tbody>
-            @for (h of history(); track $index) {
-              <tr>
-                <td>{{ time(h.occurredAt) }}</td>
-                <td>{{ h.fromState ? label(h.fromState) + ' → ' : '' }}{{ label(h.toState) }}</td>
-                <td>{{ h.actorName ?? '—' }}</td>
-                <td>{{ h.signatureMeaning ?? '—' }}</td>
-                <td>{{ h.comment ?? '' }}</td>
-              </tr>
-            }
-          </tbody>
-        </table>
+        <pos-history-table [entries]="history()" [label]="label" />
       </section>
 
       <pos-signatures entity="qms.deviation" [recordId]="d.id" [refresh]="d.rowVersion" />
       <pos-audit-trail schema="qms" table="deviation" [recordId]="d.id" [refresh]="d.rowVersion" />
-
-      @if (intent(); as i) {
-        <pos-esig-dialog [intent]="i" (confirmed)="confirmSigning($event)" (cancelled)="intent.set(null)" />
-      }
     } @else if (!error()) {
       <p>Loading…</p>
     }
   `,
   styles: `
     h1 small { font-size: 1rem; font-weight: 400; color: var(--pos-muted); margin-left: 8px; }
-    .progress { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; padding: 0; margin: 0 0 12px; font-size: 0.85rem; }
-    .progress li { padding: 2px 10px; border-radius: 12px; border: 1px solid var(--pos-border); color: var(--pos-muted); }
-    .progress li.done { color: var(--pos-text); }
-    .progress li.current { background: var(--pos-accent, #1f5fa8); border-color: transparent; color: #fff; }
-    .progress li.cancelled { background: var(--pos-danger); }
     .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, max-content)); gap: 2px 16px; margin: 0 0 16px; font-size: 0.9rem; }
     .facts dt { color: var(--pos-muted); font-size: 0.8rem; }
     .facts dd { margin: 0 0 6px; }
     .save { display: flex; gap: 12px; align-items: flex-end; justify-content: flex-end; margin: 12px 0; }
     .save label { display: flex; flex-direction: column; font-size: 0.875rem; gap: 4px; flex: 1; max-width: 480px; }
-    .workflow { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
-    .action { display: flex; flex-direction: column; gap: 2px; max-width: 320px; }
-    .action small { color: var(--pos-muted); font-size: 0.8rem; }
-    .reason-panel { border: 1px solid var(--pos-border); border-radius: 6px; padding: 12px; margin: 0 0 16px; max-width: 520px; }
-    .reason-panel label { display: flex; flex-direction: column; gap: 4px; font-size: 0.875rem; }
-    .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-    th, td { text-align: left; border-bottom: 1px solid var(--pos-border); padding: 4px 8px; }
+    .capas { margin: 0 0 8px; }
     .req { color: var(--pos-danger); }
   `,
 })
 export class DeviationDetailPage implements OnInit {
   private readonly api = inject(DeviationApi);
+  private readonly capaApi = inject(CapaApi);
   private readonly esig = inject(EsigApi);
   private readonly auth = inject(AuthService);
   private readonly http = inject(HttpClient);
@@ -306,17 +276,15 @@ export class DeviationDetailPage implements OnInit {
   readonly deviation = signal<Deviation | null>(null);
   readonly actions = signal<DeviationActions | null>(null);
   readonly history = signal<HistoryEntry[]>([]);
+  readonly capas = signal<Capa[]>([]);
   readonly bundle = signal<RuntimeBundle | null>(null);
-  readonly signing = signal<SigningOptions | null>(null);
-  readonly intent = signal<SignIntent | null>(null);
-  readonly reasonFor = signal<DeviationAction | null>(null);
   readonly error = signal<string | null>(null);
   readonly message = signal<string | null>(null);
   readonly busy = signal(false);
   protected changeReason = '';
-  protected transitionReason = '';
   private etag = '';
-  private pending: DeviationAction | null = null;
+  /** The action just carried out; the message names the state it led to once reloaded. */
+  private doneLabel: string | null = null;
 
   readonly initialValue = computed(() => {
     const d = this.deviation();
@@ -332,36 +300,44 @@ export class DeviationDetailPage implements OnInit {
   });
 
   readonly canEdit = computed(() => (this.actions()?.editableFields.length ?? 0) > 0);
+  readonly canRaiseCapa = computed(() => {
+    const d = this.deviation();
+    return !!d && this.auth.hasPermission('qms.capa:write') && d.status !== 'CLOSED' && d.status !== 'CANCELLED';
+  });
+
+  /** Runs an unsigned transition with the ETag last read. */
+  readonly transition = (action: string, reason: string | null) => this.api.transition(this.id(), this.etag, action, reason);
 
   ngOnInit(): void {
     this.http.get<RuntimeBundle>(BUNDLE_URL).subscribe({
       next: (b) => this.bundle.set(b),
       error: (e: unknown) => this.error.set(describeError(e)),
     });
-    if (this.auth.hasPermission('esig.sign')) {
-      this.esig.options('qms.deviation').subscribe({ next: (o) => this.signing.set(o), error: () => this.signing.set(null) });
-    }
     const challenge = this.esigChallenge();
     if (challenge) this.completeSigning(challenge);
     else this.load();
   }
 
   load(): void {
-    forkJoin([this.api.get(this.id()), this.api.actions(this.id()), this.api.history(this.id())]).subscribe({
-      next: ([{ value, etag }, actions, history]) => {
+    const capas = this.auth.hasPermission('qms.capa:read') ? this.capaApi.list({ sourceId: this.id() }) : of([]);
+    forkJoin([this.api.get(this.id()), this.api.actions(this.id()), this.api.history(this.id()), capas]).subscribe({
+      next: ([{ value, etag }, actions, history, linked]) => {
         this.deviation.set(value);
         this.etag = etag;
         this.actions.set(actions);
         this.history.set(history);
+        this.capas.set(linked);
+        if (this.doneLabel) this.message.set(`${this.doneLabel}: now ${stateLabel(value.status)}.`);
+        this.doneLabel = null;
         this.changeReason = '';
         this.busy.set(false);
       },
-      error: (e: unknown) => {
-        this.busy.set(false);
-        this.error.set(describeError(e));
-      },
+      error: (e: unknown) => this.fail(describeError(e)),
     });
   }
+
+  /** Unsaved form changes block workflow actions. */
+  readonly unsaved = (): string | null => (this.form()?.form().dirty ? 'Save or discard your changes first.' : null);
 
   save(): void {
     const form = this.form();
@@ -394,80 +370,14 @@ export class DeviationDetailPage implements OnInit {
         this.message.set('Saved.');
         this.load();
       },
-      error: (e: unknown) => this.fail(e),
+      error: (e: unknown) => this.fail(describeError(e)),
     });
   }
 
-  start(a: DeviationAction): void {
+  afterTransition(label: string): void {
     this.clear();
-    if (this.form()?.form().dirty) {
-      this.error.set('Save or discard your changes first.');
-      return;
-    }
-    if (a.signatureMeaning) {
-      this.openSigning(a);
-    } else if (a.requiresReason) {
-      this.transitionReason = '';
-      this.reasonFor.set(a);
-    } else {
-      this.run(a, null);
-    }
-  }
-
-  run(a: DeviationAction, reason: string | null): void {
-    const d = this.deviation();
-    if (!d) return;
-    this.busy.set(true);
-    this.reasonFor.set(null);
-    this.api.transition(d.id, this.etag, a.action, reason).subscribe({
-      next: ({ value }) => {
-        this.message.set(`${a.label}: now ${stateLabel(value.status)}.`);
-        this.load();
-      },
-      error: (e: unknown) => this.fail(e),
-    });
-  }
-
-  private openSigning(a: DeviationAction): void {
-    const d = this.deviation();
-    const user = this.auth.user();
-    const options = this.signing();
-    const meaning = options?.meanings.find((m) => m.code === a.signatureMeaning);
-    if (!d || !user || !options || !meaning) {
-      this.error.set('You cannot sign: the e-signature permission is missing.');
-      return;
-    }
-    this.pending = a;
-    this.intent.set({
-      entity: 'qms.deviation',
-      recordNumber: `${d.deviationNo} (${a.label})`,
-      recordVersion: d.rowVersion,
-      meaningCode: meaning.code,
-      meaningLabel: meaning.label,
-      meaningStatement: meaning.statement,
-      signerName: user.name ?? user.login,
-      signerLogin: user.login,
-      reasonRequired: a.requiresReason || meaning.requiresReason,
-      acknowledgementText: options.statement.acknowledged ? null : options.statement.text,
-    });
-  }
-
-  confirmSigning(c: SignConfirmation): void {
-    const d = this.deviation();
-    const a = this.pending;
-    if (!d || !a?.signatureMeaning) return;
-    this.esig
-      .challenge({
-        entity: 'qms.deviation', recordId: d.id, recordVersion: d.rowVersion, meaning: a.signatureMeaning,
-        reason: c.reason, acknowledge: c.acknowledged, action: a.action,
-      })
-      .subscribe({
-        next: ({ challengeId }) => this.auth.reauthenticate(`/deviations/${d.id}?esig=${encodeURIComponent(challengeId)}`),
-        error: (e: unknown) => {
-          this.intent.set(null);
-          this.fail(e);
-        },
-      });
+    this.doneLabel = label;
+    this.load();
   }
 
   private completeSigning(challengeId: string): void {
@@ -495,9 +405,10 @@ export class DeviationDetailPage implements OnInit {
     this.message.set(null);
   }
 
-  private fail(e: unknown): void {
+  fail(message: string): void {
     this.busy.set(false);
-    this.error.set(describeError(e));
+    this.message.set(null);
+    this.error.set(message);
   }
 
   protected isDone(state: string, current: string): boolean {
@@ -505,12 +416,10 @@ export class DeviationDetailPage implements OnInit {
     return current === 'CLOSED' || order.indexOf(state) < order.indexOf(current);
   }
 
-  protected label(code: string): string {
-    return stateLabel(code);
-  }
+  protected readonly label = stateLabel;
+  protected readonly capaLabel = capaStateLabel;
 
   protected time(iso: string): string {
     return formatTimestamp(iso);
   }
 }
-
