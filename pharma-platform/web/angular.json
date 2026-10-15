@@ -65,6 +65,12 @@
             },
             "development": {
               "buildTarget": "web:build:development"
+            },
+            "codespaces": {
+              "buildTarget": "web:build:development",
+              "allowedHosts": [
+                ".app.github.dev"
+              ]
             }
           },
           "defaultConfiguration": "development",

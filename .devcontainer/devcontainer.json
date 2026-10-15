@@ -1,0 +1,25 @@
+// PharmaOS in GitHub Codespaces (or any dev container host). DEVELOPMENT ONLY: demo data, known passwords.
+// First start installs everything (about 10–15 minutes); later starts take about a minute.
+// See pharma-platform/INSTALL.md, "Quickest path: GitHub Codespaces".
+{
+  "name": "PharmaOS (development)",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/dotnet:2": { "version": "10.0" },
+    "ghcr.io/devcontainers/features/node:1": { "version": "24" }
+  },
+  "hostRequirements": { "memory": "8gb" },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "bash .devcontainer/start.sh",
+  "forwardPorts": [4200, 8080],
+  "portsAttributes": {
+    "4200": { "label": "PharmaOS", "onAutoForward": "openBrowser" },
+    "8080": { "label": "Keycloak sign-in", "onAutoForward": "silent" },
+    "5080": { "label": "API (reached through 4200)", "onAutoForward": "ignore" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-dotnettools.csharp", "angular.ng-template"]
+    }
+  }
+}

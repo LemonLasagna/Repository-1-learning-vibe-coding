@@ -3,9 +3,15 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using PharmaOS.Platform.Host;
 using PharmaOS.Platform.Host.Security;
 
@@ -65,6 +71,24 @@ public sealed class BffTests : IClassFixture<PostgresFixture>, IDisposable
     {
         var res = await _factory.ClientFor(Analyst).GetAsync("/bff/logout?sid=guessed");
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(null, "http://localhost/signin-oidc")]
+    [InlineData("https://pharmaos-4200.app.github.dev/", "https://pharmaos-4200.app.github.dev/signin-oidc")]
+    public async Task Sign_in_callback_uses_the_public_origin_when_configured(string? publicOrigin, string expected)
+    {
+        // Behind port forwarding the server sees localhost, but Keycloak must send the browser back to the public address.
+        using var factory = _factory.WithWebHostBuilder(b =>
+        {
+            if (publicOrigin is not null) b.UseSetting("Oidc:PublicOrigin", publicOrigin);
+            b.ConfigureTestServices(s => s.Configure<OpenIdConnectOptions>(OpenIdConnectDefaults.AuthenticationScheme, o =>
+                o.Configuration = new OpenIdConnectConfiguration { AuthorizationEndpoint = "https://idp.example/auth" }));
+        });
+        var res = await factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false }).GetAsync("/bff/login");
+        Assert.Equal(HttpStatusCode.Redirect, res.StatusCode);
+        var query = System.Web.HttpUtility.ParseQueryString(res.Headers.Location!.Query);
+        Assert.Equal(expected, query["redirect_uri"]);
     }
 
     [Theory]

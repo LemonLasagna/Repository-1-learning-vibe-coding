@@ -4,12 +4,44 @@ There are two kinds of installation. Pick yours first.
 
 | You want to… | Section | Works today? |
 |---|---|---|
+| Try PharmaOS in a browser tab without installing anything | [Quickest path: GitHub Codespaces](#quickest-path-github-codespaces) | **Yes.** Same installer; sign-in through the public codespace addresses verified with simulated addresses |
 | Run the code on a workstation, build it, run the tests, and look at the screens | [A. Developer workstation](#a-developer-workstation) | **Yes.** Every step below was run and verified |
 | Install PharmaOS on a plant or company server for real use | [B. Server installation (tier S)](#b-server-installation-tier-s-single-server) | **Not yet.** The database and supporting services install; the application images are not built yet |
 
 > **Sign-in** uses Keycloak with a server-side session. The browser holds only an HttpOnly cookie; tokens
 > stay on the server. For development, a ready-made Keycloak realm with two test users is shipped (A5).
 > It is for development only and must never be used for TEST, VAL or PROD.
+
+---
+
+## Quickest path: GitHub Codespaces
+
+Nothing is installed on your computer; PharmaOS runs in a cloud container and opens in your browser.
+Development only: demo data and known passwords.
+
+1. On the repository page on GitHub, press **Code** → **Codespaces** → **Create codespace on main**
+   (or on the branch you want).
+2. Wait. The first start installs PostgreSQL 16, .NET, Node, Java and Keycloak, then runs `./install.sh`
+   with the demo organisation, including every test: about 10–15 minutes. Press **View creation log** to
+   follow it. Later starts of the same codespace take about a minute.
+3. When the **PharmaOS** tab opens (port 4200), press **Sign in** and use `qa.analyst`, `qa.approver` or
+   `read.only` with password `Dev-Only-Pass-2026`. If no tab opens, go to the **Ports** panel and open the
+   address on port 4200.
+
+What runs, and how to control it:
+
+- `.devcontainer/setup.sh` runs once when the codespace is created; `.devcontainer/start.sh` runs on every
+  start and launches PostgreSQL, Keycloak (port 8080), the backend (5080) and `ng serve` (4200) in the
+  background. Logs: `~/pharmaos-logs/`. To restart everything: `bash .devcontainer/start.sh` in the terminal.
+- Each forwarded port has its own `https://<codespace>-<port>.app.github.dev` address. The start script
+  passes these to Keycloak (`--hostname`, with backchannel requests from the backend on localhost) and to the
+  backend (`Oidc__PublicOrigin`, `Oidc__MetadataAddress`), and adds the codespace's sign-in callback to the
+  development realm before Keycloak first imports it.
+- Keep the ports **private** (the default). Making port 8080 public would expose the Keycloak admin console
+  with the password `admin`.
+- Codespaces stop after a period of inactivity and count against your GitHub Codespaces allowance; delete
+  the codespace when you no longer need it. Check GitHub's current free allowance on your account's billing page.
+- The CI job `devcontainer` builds the same container from scratch on each change to it.
 
 ---
 
