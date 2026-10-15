@@ -15,6 +15,35 @@ There are two kinds of installation. Pick yours first.
 
 ## A. Developer workstation
 
+### Quick path: the installation wizard
+
+Once the prerequisites in A1 are installed, one command does A3 to A6 for you:
+
+```bash
+cd pharma-platform
+./install.sh
+```
+
+The wizard:
+1. Asks for the PostgreSQL connection and a database name.
+2. Checks the tool versions.
+3. Creates the database and runs the data-integrity tests.
+4. Checks that every GxP table has its audit trigger and row-level security.
+5. Creates two logins with generated passwords and saves them to `pharmaos.env` (readable only by you).
+6. Builds and tests the backend and frontend.
+7. Starts the backend once to confirm it reaches the database.
+
+It finishes by writing `install-reports/install-report-<time>.md`. The report is laid out like the IQ
+template, records the SHA-256 of every schema file, and has a checksum file next to it.
+
+- It never drops an existing database unless you agree **and** type the database name.
+- It never prints or logs a password.
+- Scripted use: `PGPASSWORD=… ./install.sh --non-interactive --db pharmaos_dev` (see `./install.sh --help`).
+- Login names are `<database>_app` and `<database>_auditor`, so several installations can share one
+  PostgreSQL server without overwriting each other's passwords.
+
+The manual steps below do the same thing by hand.
+
 ### A1. Prerequisites
 
 | Tool | Version | Why this version |
