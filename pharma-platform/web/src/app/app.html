@@ -1,6 +1,9 @@
 <header class="shell-header">
   <a class="brand" routerLink="/">PharmaOS</a>
   <nav aria-label="Main">
+    <a routerLink="/inbox" routerLinkActive="active">My work
+      @if (inbox.counts()?.actionable; as n) {<span class="count" [class.late]="inbox.counts()!.overdue > 0"
+        [attr.aria-label]="n + ' waiting'">{{ n }}</span>}</a>
     <a routerLink="/uoms" routerLinkActive="active">Units of measure</a>
     <a routerLink="/deviations" routerLinkActive="active">Deviations</a>
     <a routerLink="/capas" routerLinkActive="active">CAPA</a>
