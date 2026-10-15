@@ -24,6 +24,12 @@ public static class Permissions
     /// <summary>QA: approve and close, or return to investigation.</summary>
     public const string DeviationApprove = "qms.deviation:approve";
 
+    public const string CapaRead = "qms.capa:read";
+    /// <summary>Raise CAPAs, plan actions and the effectiveness check, complete actions, record the check result.</summary>
+    public const string CapaWrite = "qms.capa:write";
+    /// <summary>QA: approve or return the plan, verify implementation and effectiveness, cancel after submission.</summary>
+    public const string CapaApprove = "qms.capa:approve";
+
     /// <summary>
     /// One policy per permission, satisfied by a "perm" claim. In production the identity-access service
     /// resolves role assignments (scoped to org nodes) into these claims; Keycloak roles are not used directly.

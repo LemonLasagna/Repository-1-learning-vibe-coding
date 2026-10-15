@@ -3,30 +3,9 @@
 'use strict';
 const { chromium } = require('playwright-core');
 const assert = require('node:assert/strict');
-const { BASE, signIn, confirmPassword, step } = require('./helpers.cjs');
+const { BASE, signIn, step, localInput, state, signAction } = require('./helpers.cjs');
 
 const title = `E2E deviation ${Date.now().toString(36)}`;
-
-function localInput(date) {
-  const p = (n) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}T${p(date.getHours())}:${p(date.getMinutes())}`;
-}
-
-async function state(page) {
-  return (await page.locator('.progress .current').innerText()).trim();
-}
-
-/** Signs the workflow action through the dialog and Keycloak, and waits for the result banner. */
-async function signAction(page, button, banner) {
-  await page.getByRole('button', { name: button, exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Electronic signature' });
-  await dialog.waitFor();
-  const ack = dialog.locator('.ack input');
-  if (await ack.count()) await ack.check();
-  await dialog.getByRole('button', { name: 'Continue to sign' }).click();
-  await confirmPassword(page);
-  await page.getByText(banner).waitFor();
-}
 
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
@@ -93,6 +72,7 @@ async function signAction(page, button, banner) {
       assert.equal(rows.length, 5, rows.join('\n'));
       assert.match(rows[1], /Draft → Triage\s+Quinn Analyst\s+Authored/);
       assert.match(rows[4], /QA approval → Closed\s+Avery Approver\s+Approved/);
+      await qa.locator('pos-signatures li').nth(1).waitFor(); // the panel reloads after signing
       const sigs = await qa.locator('pos-signatures').innerText();
       assert.match(sigs, /Authored by Quinn Analyst/);
       assert.match(sigs, /Approved by Avery Approver/);

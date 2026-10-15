@@ -45,11 +45,16 @@ public static class EsigCatalog
         "APPROVED", "Approved", "I approve this record for use.",
         RequireReason: false, RequireSecondPerson: true, ConflictingMeanings: new HashSet<string> { "REVIEWED", "AUTHORED" });
 
+    /// <summary>Second person: not the last editor of the version (who recorded what is being verified).</summary>
+    public static readonly MeaningDefinition Verified = new(
+        "VERIFIED", "Verified", "I have verified that what this record states was done and achieved its purpose.",
+        RequireReason: false, RequireSecondPerson: true, ConflictingMeanings: new HashSet<string>());
+
     public static readonly MeaningDefinition Cancelled = new(
         "CANCELLED", "Cancelled", "I cancel this record for the reason given.",
         RequireReason: true, RequireSecondPerson: false, ConflictingMeanings: new HashSet<string>());
 
-    public static readonly IReadOnlyList<MeaningDefinition> Meanings = [Authored, Reviewed, Approved, Cancelled];
+    public static readonly IReadOnlyList<MeaningDefinition> Meanings = [Authored, Reviewed, Approved, Verified, Cancelled];
 
     public static MeaningDefinition? FindMeaning(string? code) =>
         Meanings.FirstOrDefault(m => string.Equals(m.Code, code, StringComparison.Ordinal));

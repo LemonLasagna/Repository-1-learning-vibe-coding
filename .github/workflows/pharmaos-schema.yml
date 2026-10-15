@@ -178,7 +178,7 @@ jobs:
             for i in $(seq 1 90); do curl -fsS -o /dev/null "$url" && break; sleep 2; done
             curl -fsS -o /dev/null "$url" || { echo "not ready: $url"; exit 1; }
           done
-      - name: End-to-end tests (sign-in, e-signatures, deviation lifecycle)
+      - name: End-to-end tests (sign-in, e-signatures, deviation and CAPA lifecycles)
         working-directory: pharma-platform/web
         env:
           CHROMIUM_PATH: /usr/bin/google-chrome

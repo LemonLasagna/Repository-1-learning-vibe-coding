@@ -76,6 +76,18 @@
         {
           "name": "qms.deviation:approve",
           "description": "PharmaOS permission qms.deviation:approve (QA: approve and close, or return to investigation)"
+        },
+        {
+          "name": "qms.capa:read",
+          "description": "PharmaOS permission qms.capa:read (read CAPAs)"
+        },
+        {
+          "name": "qms.capa:write",
+          "description": "PharmaOS permission qms.capa:write (raise CAPAs, plan and complete actions, record the effectiveness result)"
+        },
+        {
+          "name": "qms.capa:approve",
+          "description": "PharmaOS permission qms.capa:approve (QA: approve or return the plan, verify implementation and effectiveness)"
         }
       ]
     }
@@ -179,7 +191,9 @@
           "audit.trail:read",
           "esig.sign",
           "qms.deviation:read",
-          "qms.deviation:write"
+          "qms.deviation:write",
+          "qms.capa:read",
+          "qms.capa:write"
         ]
       }
     },
@@ -205,7 +219,8 @@
       "clientRoles": {
         "pharmaos-web": [
           "mdm.uom:read",
-          "qms.deviation:read"
+          "qms.deviation:read",
+          "qms.capa:read"
         ]
       }
     },
@@ -235,7 +250,9 @@
           "esig.sign",
           "qms.deviation:read",
           "qms.deviation:triage",
-          "qms.deviation:approve"
+          "qms.deviation:approve",
+          "qms.capa:read",
+          "qms.capa:approve"
         ]
       }
     }

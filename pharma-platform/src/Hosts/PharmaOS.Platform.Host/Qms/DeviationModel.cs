@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using PharmaOS.Gxp;
+using PharmaOS.Platform.Host.Workflow;
 using PharmaOS.Workflow;
 
 namespace PharmaOS.Platform.Host.Qms;
@@ -16,8 +17,8 @@ namespace PharmaOS.Platform.Host.Qms;
 ///                                                          └──────────── reject (reason) ──────┘
 /// DRAFT, TRIAGE ─cancel✍Cancelled (reason)→ CANCELLED
 /// </code>
-/// Not yet: the major/critical branch with parallel QA and production review, timers and escalation, the CAPA and
-/// batch-impact guards on closure, and due-date extensions.
+/// Closure waits until every linked CAPA has an approved plan (FS §9.3.1 guard). Not yet: the major/critical branch
+/// with parallel QA and production review, timers and escalation, the batch-impact guard, and due-date extensions.
 /// </summary>
 public static class DeviationWorkflow
 {
@@ -28,7 +29,7 @@ public static class DeviationWorkflow
     public const string Closed = "CLOSED";
     public const string Cancelled = "CANCELLED";
 
-    public static readonly WorkflowDefinition Definition = new("DEVIATION_STD", 1, Draft,
+    public static readonly WorkflowDefinition Definition = new("DEVIATION_STD", 2, Draft,
     [
         new("submit", Draft, Triage, Permissions.DeviationWrite,
             Guard("""{"or":[{"not":{"var":"is_planned"}},{"not":{"isEmpty":{"var":"planned_justification"}}}]}"""),
@@ -43,7 +44,10 @@ public static class DeviationWorkflow
                 """),
             Label: "Submit for QA approval",
             GuardMessage: "Enter the root cause summary and, for a major or critical deviation, the product impact assessment."),
-        new("approve", QaApproval, Closed, Permissions.DeviationApprove, SignatureMeaning: "APPROVED", Label: "Approve and close"),
+        new("approve", QaApproval, Closed, Permissions.DeviationApprove,
+            Guard("""{"==":[{"var":"capas_awaiting_plan_approval"},0]}"""),
+            SignatureMeaning: "APPROVED", Label: "Approve and close",
+            GuardMessage: "Every linked CAPA needs an approved plan before the deviation can close."),
         new("reject", QaApproval, Investigation, Permissions.DeviationApprove, Label: "Return to investigation", RequireReason: true),
     ]);
 
@@ -76,7 +80,7 @@ public sealed record FieldSpec(
     string Name, string? Column, string? ExtKey, FieldKind Kind, bool Required = false, int MaxLength = 0,
     IReadOnlyList<string>? Options = null, int Min = int.MinValue, int Max = int.MaxValue);
 
-public static partial class DeviationFields
+public static class DeviationFields
 {
     public static readonly IReadOnlyList<FieldSpec> All =
     [
@@ -100,7 +104,11 @@ public static partial class DeviationFields
     ];
 
     public static FieldSpec? Find(string name) => All.FirstOrDefault(f => f.Name == name);
+}
 
+/// <summary>Parses API field values (validated JSON → database values), shared by the record APIs.</summary>
+public static partial class FieldParser
+{
     [GeneratedRegex(@"(Z|[+-]\d{2}:\d{2})$")]
     private static partial Regex HasOffset();
 
@@ -169,8 +177,10 @@ public sealed record DeviationRow(
     string DeviationType, bool IsPlanned, DateTimeOffset OccurredAt, DateTimeOffset DiscoveredAt, string? ImmediateAction,
     string? ImpactAssessment, string? RootCauseSummary, int? RiskScore, Guid OwnerId, string? OwnerName, Guid? QaOwnerId,
     string? QaOwnerName, DateOnly DueDate, DateTimeOffset? ClosedAt, string Status, Guid? WorkflowInstanceId, string ExtJson,
-    int RowVersion, DateTimeOffset UpdatedAt, Guid UpdatedBy)
+    int RowVersion, DateTimeOffset UpdatedAt, Guid UpdatedBy, int CapasAwaitingPlanApproval) : IWorkflowRecord
 {
+    public string Number => DeviationNo;
+
     public JsonObject Ext => JsonNode.Parse(ExtJson) as JsonObject ?? [];
 
     /// <summary>The record as the workflow guards see it (field names as in the form bundle).</summary>
@@ -188,6 +198,7 @@ public sealed record DeviationRow(
             ["root_cause_summary"] = RootCauseSummary,
             ["risk_score"] = RiskScore,
             ["status"] = Status,
+            ["capas_awaiting_plan_approval"] = CapasAwaitingPlanApproval,
         };
         foreach (var (k, v) in Ext) o[k] = v?.DeepClone();
         return o;

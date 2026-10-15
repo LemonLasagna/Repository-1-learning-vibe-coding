@@ -24,7 +24,8 @@ public sealed class WorkflowStore(NpgsqlConnection conn, NpgsqlTransaction tx)
         await using (var cmd = Cmd("""
             INSERT INTO wf.process_definition (tenant_id, code, name, entity_definition_id, bpmn_xml, model_json, status, is_gxp, ext, created_by, updated_by)
             VALUES (@tenant, @code, @name, @ed, '', @model, 'ACTIVE', true, @ext, @user, @user)
-            ON CONFLICT (tenant_id, code) DO NOTHING
+            ON CONFLICT (tenant_id, code) DO UPDATE SET model_json = EXCLUDED.model_json, ext = EXCLUDED.ext
+             WHERE coalesce((wf.process_definition.ext->>'version')::int, 0) < @version
             """))
         {
             cmd.Parameters.AddWithValue("tenant", ctx.TenantId);
@@ -34,7 +35,11 @@ public sealed class WorkflowStore(NpgsqlConnection conn, NpgsqlTransaction tx)
             cmd.Parameters.Add(new NpgsqlParameter("model", NpgsqlDbType.Jsonb) { Value = ModelJson(def) });
             cmd.Parameters.Add(new NpgsqlParameter("ext", NpgsqlDbType.Jsonb) { Value = $$"""{"source":"code","version":{{def.Version}}}""" });
             cmd.Parameters.AddWithValue("user", ctx.UserId);
+            cmd.Parameters.AddWithValue("version", def.Version);
+            // A newer release upgrades the stored definition (audited); running instances keep the version they started with.
+            await WorkflowTransitions.SetChangeReasonAsync(conn, tx, $"Workflow {def.Code} v{def.Version} from the release", ct);
             await cmd.ExecuteNonQueryAsync(ct);
+            await WorkflowTransitions.SetChangeReasonAsync(conn, tx, ctx.ChangeReason, ct);
         }
         await using var get = Cmd("SELECT id FROM wf.process_definition WHERE code = @code");
         get.Parameters.AddWithValue("code", def.Code);
