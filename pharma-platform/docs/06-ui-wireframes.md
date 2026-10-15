@@ -44,6 +44,13 @@ colour per environment, which prevents someone executing validation in PROD by m
  Bulk actions: [Claim] [Delegate…]   (no bulk e-signature: each GxP signature is per record)
 ```
 
+**As implemented (R0).** `/inbox` is the landing page (`GET /api/work/v1/inbox`). It lists what the signed-in user can do
+now, overdue first: owners' drafts and investigations, actions assigned to them, and QA's triage, plan reviews,
+verifications and approvals. Each item says whether the user does the work, signs it, or must wait (e.g. a deviation
+waiting for linked CAPA plans). Items the user could not sign because of segregation of duties are left out. The menu
+shows the number of items to act on, red when any is overdue. Not yet: group queues, delegation, watching, claiming,
+SLA bars and filters; the list is computed from the records' workflow state, not from task rows (`wf.task`).
+
 ## 6.3 Generic GxP record page (metadata-rendered; Deviation example)
 
 ```

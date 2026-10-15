@@ -88,7 +88,8 @@ Signed transitions run through the e-signature service: the challenge carries th
 the state change commit in one transaction. Field editability is per state and enforced by the server; a reason
 for change is required after Draft. History is written to `wf.process_history` with the signature id.
 Not yet: the major/critical branch with parallel QA and production review, timers and escalation, the
-batch-impact guard on closure, due-date extensions, and task inboxes. (`DEVIATION_STD` v2 added the CAPA guard;
+batch-impact guard on closure, due-date extensions, and group queues and delegation (the personal "My work" inbox
+exists, doc 06 §6.2). (`DEVIATION_STD` v2 added the CAPA guard;
 a stored v1 definition is upgraded on first use, and running instances keep the version they started with.)
 
 ### 9.3.2 Reference workflow: CAPA

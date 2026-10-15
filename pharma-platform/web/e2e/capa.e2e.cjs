@@ -59,6 +59,17 @@ const { BASE, signIn, step, state, signAction, raiseDeviation } = require('./hel
       await qa.getByText('Every linked CAPA needs an approved plan before the deviation can close.').waitFor();
     });
 
+    await step('QA finds both in "My work": the plan to review, the deviation waiting for it', async () => {
+      await qa.goto(`${BASE}/inbox`);
+      const planItem = qa.locator('li', { hasText: 'Review and approve the plan' }).filter({ has: qa.locator(`a[href="${capa}"]`) });
+      await planItem.waitFor();
+      await qa.locator('li', { hasText: 'Waiting for 1 linked CAPA plan(s) to be approved' })
+        .filter({ has: qa.locator(`a[href="${deviation}"]`) }).waitFor();
+      assert.match(await qa.locator('nav .count').innerText(), /^\d+$/);
+      await planItem.locator('a').click();
+      await qa.waitForURL(`${BASE}${capa}`);
+    });
+
     await step('QA approves the CAPA plan (signed), and then the deviation closes', async () => {
       await qa.goto(`${BASE}${capa}`);
       await signAction(qa, 'Approve plan ✍', 'Signed: Approved by Avery Approver.');

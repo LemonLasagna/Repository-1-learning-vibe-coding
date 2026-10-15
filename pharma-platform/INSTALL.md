@@ -146,7 +146,7 @@ PHARMAOS_TEST_PG="Host=localhost;Username=postgres;Password=postgres" \
 ```
 
 The integration tests create and then drop their own throw-away database (`pharmaos_it_…`). They do
-not touch `pharmaos_dev`. Expected: 96 unit tests and 51 integration tests pass.
+not touch `pharmaos_dev`. Expected: 96 unit tests and 55 integration tests pass.
 
 ### A5. Start Keycloak and run the backend
 
@@ -205,7 +205,7 @@ curl -i http://localhost:5080/api/mdm/v1/uoms | head -1   # HTTP/1.1 401 Unautho
 ```bash
 cd web
 npm ci                                   # exact versions from package-lock.json
-npx ng test --watch=false                # expect: 89 passed
+npx ng test --watch=false                # expect: 91 passed
 npx ng build                             # production build with strict template checks
 npx ng serve                             # http://localhost:4200
 ```
@@ -229,6 +229,9 @@ npx ng serve                             # http://localhost:4200
   `qa.approver`, **Approve and close ✍** (signed as Approved) or **Return to investigation** (with a reason).
   The workflow history, signatures and audit trail show each step. The form is generated from
   `web/public/metadata/deviation.bundle.json`; the server decides which fields are editable in each state.
+- **My work** (the start page) lists what is waiting on the signed-in user, overdue first: as `qa.approver` you see
+  triage, plan reviews, verifications and approvals; as `qa.analyst` your drafts, investigations and actions. The
+  number next to the menu entry is red when something is overdue.
 - **CAPA**: on a deviation in investigation, press **Raise CAPA** (it takes the deviation's site and text). Plan the
   effectiveness check and at least one action, then **Submit plan for review**. The deviation cannot be approved
   and closed until `qa.approver` has signed **Approve plan ✍**. Then complete each action with evidence, have QA
@@ -246,7 +249,7 @@ unit of measure, checks the audit actor, checks that the editor cannot approve, 
 checks that `read.only` cannot write, and has `qa.approver` approve the unit with a Keycloak password prompt.
 It then takes a deviation from draft to closed with both users, including the two signatures and the guard, and
 finally runs a CAPA raised from a deviation through plan approval, the deviation's closure, implementation and the
-effectiveness check.
+effectiveness check, checking QA's "My work" list on the way.
 The CI job `e2e` runs the same tests.
 
 ### A7. Changing the data model

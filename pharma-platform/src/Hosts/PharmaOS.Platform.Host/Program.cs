@@ -8,6 +8,7 @@ using PharmaOS.Platform.Host.ESignature;
 using PharmaOS.Platform.Host.MasterData;
 using PharmaOS.Platform.Host.Qms;
 using PharmaOS.Platform.Host.Security;
+using PharmaOS.Platform.Host.Work;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -33,6 +34,8 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ISignableSource, UomSignable>();
 builder.Services.AddSingleton<ISignableSource, DeviationSignable>();
 builder.Services.AddSingleton<ISignableSource, CapaSignable>();
+builder.Services.AddSingleton<IInboxSource, DeviationInbox>();
+builder.Services.AddSingleton<IInboxSource, CapaInbox>();
 builder.Services.AddSingleton<SignableRegistry>();
 
 // Connection strings are resolved lazily so test hosts and environments can override them.
@@ -63,6 +66,7 @@ app.MapAuditEndpoints();
 app.MapEsigEndpoints();
 app.MapDeviationEndpoints();
 app.MapCapaEndpoints();
+app.MapInboxEndpoints();
 
 app.Run();
 

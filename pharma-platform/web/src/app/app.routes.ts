@@ -1,7 +1,12 @@
 import { Routes } from '@angular/router';
 
 export const routes: Routes = [
-  { path: '', pathMatch: 'full', redirectTo: 'uoms' },
+  { path: '', pathMatch: 'full', redirectTo: 'inbox' },
+  {
+    path: 'inbox',
+    title: 'My work · PharmaOS',
+    loadComponent: () => import('./features/inbox/inbox-page').then((m) => m.InboxPage),
+  },
   {
     path: 'uoms',
     title: 'Units of measure · PharmaOS',
@@ -42,5 +47,5 @@ export const routes: Routes = [
     title: 'CAPA · PharmaOS',
     loadComponent: () => import('./features/capa/capa-pages').then((m) => m.CapaDetailPage),
   },
-  { path: '**', redirectTo: 'uoms' },
+  { path: '**', redirectTo: 'inbox' },
 ];
