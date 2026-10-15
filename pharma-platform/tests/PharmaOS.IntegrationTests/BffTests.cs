@@ -12,6 +12,7 @@ using PharmaOS.Platform.Host.Security;
 namespace PharmaOS.IntegrationTests;
 
 /// <summary>Server-side session (BFF) behaviour that does not need a running Keycloak.</summary>
+[Collection(PostgresFixture.Collection)]
 public sealed class BffTests : IClassFixture<PostgresFixture>, IDisposable
 {
     private static readonly TestUser Analyst = new(Guid.Parse("11111111-1111-1111-1111-111111111111"),

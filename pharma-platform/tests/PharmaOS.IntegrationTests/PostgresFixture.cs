@@ -11,6 +11,12 @@ namespace PharmaOS.IntegrationTests;
 /// </summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
+    /// <summary>
+    /// Test classes using this fixture share one collection so they run one after another: the DDL creates
+    /// cluster-wide roles, and two fixtures loading it at once on a fresh server race on CREATE ROLE.
+    /// </summary>
+    public const string Collection = "postgres";
+
     private const string AppPassword = "it-app-password";
     private const string AuditorPassword = "it-auditor-password";
 
@@ -82,3 +88,6 @@ public sealed class PostgresFixture : IAsyncLifetime
         throw new DirectoryNotFoundException("database/schema not found above " + AppContext.BaseDirectory);
     }
 }
+
+[CollectionDefinition(PostgresFixture.Collection)]
+public sealed class PostgresCollection;

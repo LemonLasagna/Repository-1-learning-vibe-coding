@@ -9,6 +9,7 @@ namespace PharmaOS.IntegrationTests;
 /// End-to-end through HTTP → GxP context → EF Core → PostgreSQL triggers/RLS → audit API.
 /// Each test uses its own codes so tests are independent within the shared fixture database.
 /// </summary>
+[Collection(PostgresFixture.Collection)]
 public sealed class UomApiTests : IClassFixture<PostgresFixture>, IDisposable
 {
     private static readonly Guid TenantA = Guid.Parse("0000000a-0000-0000-0000-000000000000");
