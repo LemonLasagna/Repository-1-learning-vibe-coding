@@ -410,7 +410,7 @@ if $DO_SMOKE; then
   [[ -f "$DLL" ]] || die "Backend not built ($DLL missing)."
   ( set -a; # shellcheck disable=SC1090
     source "$ENV_FILE"; set +a
-    exec dotnet "$DLL" --urls "http://127.0.0.1:$PORT" ) >"$LOGS/host.log" 2>&1 &
+    exec dotnet "$DLL" --contentRoot "$(cd "$(dirname "$DLL")" && pwd)" --urls "http://127.0.0.1:$PORT" ) >"$LOGS/host.log" 2>&1 &
   HOST_PID=$!
   for _ in $(seq 1 60); do curl -fs "http://127.0.0.1:$PORT/health/live" >/dev/null 2>&1 && break; sleep 1; done
   READY="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/health/ready" || true)"
@@ -487,9 +487,11 @@ info "Settings: pharmaos.env"
 if ((${#WARNINGS[@]})); then printf '  %s%d warning(s); see the report.%s\n' "$Y" "${#WARNINGS[@]}" "$N"; fi
 cat <<EOF
 
-Next steps
+Next steps (development)
+  Start Keycloak:      docker compose -f deploy/keycloak/docker-compose.dev.yml up -d
   Start the backend:   set -a; source pharmaos.env; set +a
+                       ASPNETCORE_ENVIRONMENT=Development \\
                        dotnet run --project src/Hosts/PharmaOS.Platform.Host --urls http://localhost:5080
   Start the frontend:  cd web && npx ng serve        → http://localhost:4200
-  The Deviation demo works fully; data screens show 401 until Keycloak sign-in is added.
+  Sign in as qa.analyst or read.only (password Dev-Only-Pass-2026; development realm only).
 EOF

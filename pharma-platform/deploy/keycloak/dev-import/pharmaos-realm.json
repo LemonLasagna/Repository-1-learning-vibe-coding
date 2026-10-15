@@ -1,0 +1,189 @@
+{
+  "realm": "pharmaos",
+  "displayName": "PharmaOS (DEVELOPMENT REALM - not for production)",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "rememberMe": false,
+  "loginWithEmailAllowed": false,
+  "duplicateEmailsAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "passwordPolicy": "length(12) and notUsername and notEmail and passwordHistory(5)",
+  "ssoSessionIdleTimeout": 900,
+  "ssoSessionMaxLifespan": 36000,
+  "accessTokenLifespan": 300,
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+  "eventsEnabled": true,
+  "eventsExpiration": 7776000,
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": true,
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "providerId": "declarative-user-profile",
+        "subComponents": {},
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\": [{\"name\": \"username\", \"displayName\": \"${username}\", \"validations\": {\"length\": {\"min\": 3, \"max\": 255}, \"username-prohibited-characters\": {}, \"up-username-not-idn-homograph\": {}}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\"]}, \"multivalued\": false}, {\"name\": \"email\", \"displayName\": \"${email}\", \"validations\": {\"email\": {}, \"length\": {\"max\": 255}}, \"required\": {\"roles\": [\"user\"]}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\"]}, \"multivalued\": false}, {\"name\": \"firstName\", \"displayName\": \"${firstName}\", \"validations\": {\"length\": {\"max\": 255}, \"person-name-prohibited-characters\": {}}, \"required\": {\"roles\": [\"user\"]}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\"]}, \"multivalued\": false}, {\"name\": \"lastName\", \"displayName\": \"${lastName}\", \"validations\": {\"length\": {\"max\": 255}, \"person-name-prohibited-characters\": {}}, \"required\": {\"roles\": [\"user\"]}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\"]}, \"multivalued\": false}, {\"name\": \"tenant_id\", \"displayName\": \"Tenant\", \"required\": {\"roles\": [\"user\"]}, \"validations\": {\"pattern\": {\"pattern\": \"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$\", \"error-message\": \"Tenant must be a UUID\"}}, \"permissions\": {\"view\": [\"admin\"], \"edit\": [\"admin\"]}, \"multivalued\": false}], \"groups\": []}"
+          ]
+        }
+      }
+    ]
+  },
+  "roles": {
+    "client": {
+      "pharmaos-web": [
+        {
+          "name": "mdm.uom:read",
+          "description": "PharmaOS permission mdm.uom:read"
+        },
+        {
+          "name": "mdm.uom:write",
+          "description": "PharmaOS permission mdm.uom:write"
+        },
+        {
+          "name": "audit.trail:read",
+          "description": "PharmaOS permission audit.trail:read"
+        }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "pharmaos-web",
+      "name": "PharmaOS web (server-side session / BFF)",
+      "description": "Confidential client used by the PharmaOS backend-for-frontend. The browser never receives tokens.",
+      "protocol": "openid-connect",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "dev-only-client-secret-change-me",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "fullScopeAllowed": false,
+      "redirectUris": [
+        "http://localhost:4200/signin-oidc",
+        "http://localhost:5080/signin-oidc"
+      ],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:4200/signout-callback-oidc##http://localhost:5080/signout-callback-oidc"
+      },
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "basic"
+      ],
+      "optionalClientScopes": [],
+      "protocolMappers": [
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "perm",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "config": {
+            "usermodel.clientRoleMapping.clientId": "pharmaos-web",
+            "claim.name": "perm",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "pharmaos-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "qa.analyst",
+      "enabled": true,
+      "email": "qa.analyst@example.test",
+      "emailVerified": true,
+      "firstName": "Quinn",
+      "lastName": "Analyst",
+      "attributes": {
+        "tenant_id": [
+          "0000000a-0000-0000-0000-000000000000"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev-Only-Pass-2026",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "pharmaos-web": [
+          "mdm.uom:read",
+          "mdm.uom:write",
+          "audit.trail:read"
+        ]
+      }
+    },
+    {
+      "username": "read.only",
+      "enabled": true,
+      "email": "read.only@example.test",
+      "emailVerified": true,
+      "firstName": "Riley",
+      "lastName": "Reader",
+      "attributes": {
+        "tenant_id": [
+          "0000000a-0000-0000-0000-000000000000"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev-Only-Pass-2026",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "pharmaos-web": [
+          "mdm.uom:read"
+        ]
+      }
+    }
+  ]
+}

@@ -7,9 +7,9 @@ There are two kinds of installation. Pick yours first.
 | Run the code on a workstation, build it, run the tests, and look at the screens | [A. Developer workstation](#a-developer-workstation) | **Yes.** Every step below was run and verified |
 | Install PharmaOS on a plant or company server for real use | [B. Server installation (tier S)](#b-server-installation-tier-s-single-server) | **Not yet.** The database and supporting services install; the application images are not built yet |
 
-> **Known limitation today:** sign-in is not wired up. The screens open, but every data request is
-> answered with **401 Unauthorized** because the API only accepts tokens from Keycloak, and no Keycloak
-> realm is shipped yet. The automated tests are not affected: they use a test-only sign-in.
+> **Sign-in** uses Keycloak with a server-side session. The browser holds only an HttpOnly cookie; tokens
+> stay on the server. For development, a ready-made Keycloak realm with two test users is shipped (A5).
+> It is for development only and must never be used for TEST, VAL or PROD.
 
 ---
 
@@ -137,16 +137,42 @@ PHARMAOS_TEST_PG="Host=localhost;Username=postgres;Password=postgres" \
 ```
 
 The integration tests create and then drop their own throw-away database (`pharmaos_it_…`). They do
-not touch `pharmaos_dev`. Expected: 85 unit tests and 12 integration tests pass.
+not touch `pharmaos_dev`. Expected: 85 unit tests and 25 integration tests pass.
 
-### A5. Run the backend
+### A5. Start Keycloak and run the backend
 
-Use the same passwords as in A3:
+**Keycloak (development realm).** With Docker:
+
+```bash
+docker compose -f deploy/keycloak/docker-compose.dev.yml up -d   # http://localhost:8080, admin / admin
+```
+
+Without Docker (needs Java 21), download Keycloak 26.8.1 from its GitHub releases page and run:
+
+```bash
+cp deploy/keycloak/dev-import/pharmaos-realm.json keycloak-26.8.1/data/import/
+KC_BOOTSTRAP_ADMIN_USERNAME=admin KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+  keycloak-26.8.1/bin/kc.sh start-dev --import-realm
+```
+
+The realm `pharmaos` (`deploy/keycloak/dev-import/pharmaos-realm.json`) contains:
+
+| User | Password | Permissions |
+|---|---|---|
+| `qa.analyst` (Quinn Analyst) | `Dev-Only-Pass-2026` | read and change units of measure, read the audit trail |
+| `read.only` (Riley Reader) | `Dev-Only-Pass-2026` | read units of measure only |
+
+Permissions are Keycloak client roles of `pharmaos-web`, sent as the `perm` claim. The tenant is the
+user attribute `tenant_id`, which only an administrator can set. Keycloak keeps the dev realm in memory,
+so changes in the admin console are lost on restart: change the JSON file instead.
+
+**Backend.** Use the same passwords as in A3. `ASPNETCORE_ENVIRONMENT=Development` loads
+`appsettings.Development.json`, which points at the local Keycloak over plain HTTP:
 
 ```bash
 export ConnectionStrings__Db="Host=localhost;Database=pharmaos_dev;Username=pharmaos_app_login;Password=choose-app-password"
 export ConnectionStrings__AuditDb="Host=localhost;Database=pharmaos_dev;Username=pharmaos_auditor_login;Password=choose-audit-password"
-dotnet run --project src/Hosts/PharmaOS.Platform.Host --urls http://localhost:5080
+ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Hosts/PharmaOS.Platform.Host --urls http://localhost:5080
 ```
 
 In a second terminal:
@@ -154,7 +180,7 @@ In a second terminal:
 ```bash
 curl http://localhost:5080/health/live     # {"status":"live"}
 curl http://localhost:5080/health/ready    # {"status":"ready"}  (proves the database login works)
-curl -i http://localhost:5080/api/mdm/v1/uoms | head -1   # HTTP/1.1 401 Unauthorized (expected, see limitation above)
+curl -i http://localhost:5080/api/mdm/v1/uoms | head -1   # HTTP/1.1 401 Unauthorized (expected: not signed in)
 ```
 
 ### A6. Build, test and run the frontend
@@ -162,18 +188,32 @@ curl -i http://localhost:5080/api/mdm/v1/uoms | head -1   # HTTP/1.1 401 Unautho
 ```bash
 cd web
 npm ci                                   # exact versions from package-lock.json
-npx ng test --watch=false                # expect: 70 passed
+npx ng test --watch=false                # expect: 72 passed
 npx ng build                             # production build with strict template checks
 npx ng serve                             # http://localhost:4200
 ```
 
-`ng serve` forwards `/api` and `/health` to the backend on port 5080 (`web/proxy.conf.json`), so start
-A5 first. Open http://localhost:4200:
+`ng serve` forwards `/api`, `/health`, `/bff` and the sign-in callbacks to the backend on port 5080
+(`web/proxy.conf.json`), so start A5 first. Open http://localhost:4200:
 
-- **Units of measure** shows "Not signed in" and a 401 error. This is the known limitation.
+- Press **Sign in**. Keycloak asks for a user name and password; use `qa.analyst` from the table in A5.
+- **Units of measure**: create a unit, open it, change the name with a reason for change. The audit trail
+  shows "Quinn Analyst (qa.analyst)" as the actor.
+- Sign in as `read.only` to see the server refuse changes (403).
 - **Deviation (demo)** works fully. It is generated from `web/public/metadata/deviation.bundle.json`
   and needs no API. Try ticking "Planned deviation", changing the classification, and pressing
-  "Submit for QA review" to see the e-signature dialog. Nothing is saved.
+  "Submit for QA review" to see the e-signature dialog. Nothing is saved. (This demo dialog still asks for
+  the password itself; real signatures will re-authenticate at Keycloak through `/bff/reauth`.)
+
+**End-to-end sign-in test.** With Keycloak, the backend and `ng serve` running:
+
+```bash
+cd web && CHROMIUM_PATH=/path/to/chrome npm run e2e
+```
+
+It signs in through the Keycloak page, checks that no token is visible to JavaScript, creates and edits a
+unit of measure, checks the audit actor, re-authenticates, signs out, and checks that `read.only` cannot
+write. The CI job `e2e` runs the same test.
 
 ### A7. Changing the data model
 
@@ -228,6 +268,9 @@ Larger installations (site cluster, multi-site) use `deploy/k8s/` on RKE2. See d
 | `A compatible .NET SDK was not found` | No 10.0.4xx SDK | Install .NET 10 SDK (`dotnet-install.sh --channel 10.0`) |
 | `/health/ready` returns 503 | Wrong connection string or password | Recheck A3 passwords and A5 variables |
 | `GxP write … without authenticated actor` | Something wrote to the database outside the application (or with the context missing) | Intended: the database refuses anonymous changes. Write through the API |
-| API returns 401 | No Keycloak sign-in yet | Known limitation |
+| API returns 401 | Not signed in, or the session expired (15 minutes idle) | Press **Sign in** |
+| API returns 403 "Missing CSRF header" | A request was made without `X-CSRF: 1` (e.g. by hand with the session cookie) | The web app adds it; add it to manual requests |
+| Sign in fails with an error about obtaining the OpenID configuration | Keycloak not running, or the backend not started with `ASPNETCORE_ENVIRONMENT=Development` | Start Keycloak (A5); set the variable |
+| Keycloak says "Invalid parameter: redirect_uri" | App opened on a host or port the dev realm does not list | Use http://localhost:4200 or http://localhost:5080 |
 | Integration tests fail with "Set PHARMAOS_TEST_PG…" | Variable not set | Set it to a superuser connection string (A4) |
 | `permission denied to create database` | Not connected as a superuser | Use the `postgres` account or one with CREATEDB and CREATEROLE |

@@ -19,6 +19,30 @@ actions.
 | Service-to-service | mTLS (service mesh or cert-manager-issued certs) + client-credentials JWT with scoped audiences |
 | Unique IDs | `iam.app_user.username` is unique per tenant and never reassigned. Deactivation only, no delete |
 
+### Browser sessions (backend-for-frontend)
+
+The web application never handles OIDC tokens. Implemented in `src/Hosts/PharmaOS.Platform.Host/Security/Bff.cs`.
+
+| Concern | Implementation |
+|---|---|
+| Sign-in | `GET /bff/login` starts the authorization-code flow with PKCE as the confidential client `pharmaos-web`. Keycloak federates AD (LDAP/Kerberos) or another IdP; the application only trusts Keycloak |
+| Session | Cookie authentication with a server-side ticket store: the cookie (HttpOnly, `__Host-` prefix and Secure outside development, SameSite=Lax) carries only an encrypted reference to a random 256-bit session key. Tokens and claims stay in the store (in-memory today; Valkey for more than one instance) |
+| Idle timeout | Sliding 15 minutes (`Session:IdleTimeoutMinutes`); Keycloak's own SSO idle and maximum lifetimes also apply |
+| CSRF | Every `/api` request made with the cookie must carry `X-CSRF: 1`. A cross-site page cannot add a custom header without a CORS preflight, and the server grants none. Bearer-token clients are exempt |
+| Who am I | `GET /bff/user` returns login, name, tenant, permissions, `auth_time` and the logout URL, never a token |
+| Sign-out | `GET /bff/logout?sid=…` requires the session id, so a third-party page cannot sign a user out with a link. It ends the local session and the Keycloak session (RP-initiated logout) |
+| Re-authentication | `GET /bff/reauth` sends `prompt=login` and `max_age=0`, so Keycloak asks for the password even within a live SSO session; `auth_time` is refreshed. If a **different** user completes it, the server refuses (403) and the session is unchanged |
+| Machine clients | `Authorization: Bearer` (audience `pharmaos-api`) is still accepted; a policy scheme picks bearer or cookie per request |
+| Claims | `sub`, `preferred_username`, `name`, `tenant_id` (user attribute, admin-only in the Keycloak user profile), `perm` (client roles, multivalued), `sid`, `auth_time` |
+
+The e-signature service will require a fresh `auth_time` (within a short window) bound to the signature,
+so the password for a signature is typed at Keycloak, not in the application. Until that service exists,
+the e-signature dialog in the Deviation demo still collects a password locally and sends it nowhere.
+
+A development realm with test users ships in `deploy/keycloak/dev-import/` (INSTALL.md, A5). It contains
+known passwords and a fixed client secret and must never be imported into TEST, VAL or PROD. Production
+realms are configured per installation, with the client secret held in OpenBao.
+
 ## 14.3 Authorization (RBAC + ABAC)
 
 ```

@@ -122,3 +122,69 @@ jobs:
           (cd install-reports && sha256sum -c "$(basename "$r").sha256")
           if grep -E '\| FAIL \|' "$r"; then echo "Report contains failed checks"; exit 1; fi
           grep -q 'SMOKE' "$r"
+
+  e2e:
+    # Real sign-in: Keycloak (development realm) → backend-for-frontend → Angular, in Chrome.
+    runs-on: ubuntu-latest
+    needs: [dotnet, web]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGPASSWORD: postgres
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      NG_CLI_ANALYTICS: "false"
+    defaults:
+      run:
+        working-directory: pharma-platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: pharma-platform/web/package-lock.json
+      - name: Start Keycloak with the development realm
+        run: docker compose -f deploy/keycloak/docker-compose.dev.yml up -d
+      - name: Create the database (installer, no frontend, no smoke check)
+        run: ./install.sh --non-interactive --pg-host localhost --db pharmaos_e2e --skip-web --skip-smoke
+      - name: Start the backend (Development settings point at the local Keycloak)
+        run: |
+          set -a; source pharmaos.env; set +a
+          ASPNETCORE_ENVIRONMENT=Development nohup dotnet run --project src/Hosts/PharmaOS.Platform.Host \
+            -c Release --urls http://localhost:5080 > "$RUNNER_TEMP/api.log" 2>&1 &
+      - name: Start the frontend
+        working-directory: pharma-platform/web
+        run: |
+          npm ci
+          nohup npx ng serve --port 4200 > "$RUNNER_TEMP/ng.log" 2>&1 &
+      - name: Wait for Keycloak, backend and frontend
+        run: |
+          for url in http://localhost:8080/realms/pharmaos/.well-known/openid-configuration \
+                     http://localhost:5080/health/live http://localhost:4200/; do
+            for i in $(seq 1 90); do curl -fsS -o /dev/null "$url" && break; sleep 2; done
+            curl -fsS -o /dev/null "$url" || { echo "not ready: $url"; exit 1; }
+          done
+      - name: End-to-end sign-in test
+        working-directory: pharma-platform/web
+        env:
+          CHROMIUM_PATH: /usr/bin/google-chrome
+        run: npm run e2e
+      - name: Logs
+        if: failure()
+        run: |
+          tail -n 200 "$RUNNER_TEMP/api.log" "$RUNNER_TEMP/ng.log" || true
+          docker compose -f deploy/keycloak/docker-compose.dev.yml logs --tail 200 || true

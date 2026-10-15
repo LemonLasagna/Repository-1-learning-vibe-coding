@@ -4,12 +4,17 @@
     <a routerLink="/uoms" routerLinkActive="active">Units of measure</a>
     <a routerLink="/demo/deviation" routerLinkActive="active">Deviation (demo)</a>
   </nav>
+  @if (auth.user(); as u) {
+    <span class="who" title="Signed in as {{ u.login }}">{{ u.name ?? u.login }}</span>
+    <button type="button" class="secondary small" (click)="auth.logout()">Sign out</button>
+  }
   <span class="env" [attr.data-env]="config.environment" title="Environment">{{ config.environment }}</span>
 </header>
-@if (!auth.accessToken()) {
-  <p class="banner warning signin" role="status">
-    Not signed in. Sign-in through the site's Keycloak is not wired up yet, so API calls will be rejected (401).
-  </p>
+@if (auth.user() === null) {
+  <div class="banner warning signin" role="status">
+    <span>You are not signed in.</span>
+    <button type="button" (click)="auth.login()">Sign in</button>
+  </div>
 }
 <main>
   <router-outlet />

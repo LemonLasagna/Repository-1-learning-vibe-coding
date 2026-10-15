@@ -21,9 +21,10 @@ Capability comparisons with commercial products are about functional scope only.
 | `database/data-dictionary.md` | Column-level dictionary (generated) | Generated |
 | `api/openapi/quality-v1.yaml` | Reference OpenAPI 3.1 contract (Quality service) | Reference |
 | `deploy/k8s/` | Kustomize base and overlays for tier M/L (on-prem RKE2) | Reference |
-| `src/`, `tests/`, `PharmaOS.slnx` | R0 code skeleton (.NET 10): GxP context, canonical JSON, rule engine, e-signature binding, workflow transitions, EF Core interceptor, reference API slice | **Builds with 0 warnings; 85 unit + 11 integration tests pass** |
-| `web/` | Angular 22 frontend: metadata-driven form renderer, TS rule evaluator (parity with C#), e-signature dialog, units-of-measure screens with audit trail | **70 tests pass; strict production build** |
+| `src/`, `tests/`, `PharmaOS.slnx` | R0 code skeleton (.NET 10): GxP context, canonical JSON, rule engine, e-signature binding, workflow transitions, EF Core interceptor, reference API slice | **Builds with 0 warnings; 85 unit + 25 integration tests pass** |
+| `web/` | Angular 22 frontend: metadata-driven form renderer, TS rule evaluator (parity with C#), e-signature dialog, units-of-measure screens with audit trail, Keycloak sign-in | **72 tests pass; strict production build; end-to-end sign-in test** |
 | `deploy/compose/` | Tier S single-server stack: PostgreSQL loads the schema at first start | Reference |
+| `deploy/keycloak/` | Development-only Keycloak realm (two test users) and compose file; server-side session sign-in ([14](docs/14-security-model.md)) | **Development only** |
 
 ```bash
 python3 tools/schema_gen.py            # regenerate DDL + ERD + dictionary

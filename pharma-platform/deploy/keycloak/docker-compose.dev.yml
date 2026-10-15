@@ -1,0 +1,14 @@
+# DEVELOPMENT ONLY. Keycloak with the "pharmaos" realm, two test users and known passwords.
+# Never use this file, the realm export or its client secret in TEST, VAL or PROD.
+#   docker compose -f deploy/keycloak/docker-compose.dev.yml up -d     → http://localhost:8080 (admin/admin)
+# Realm changes made in the admin console are lost on restart (no database); edit the JSON instead.
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.1
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    ports: ["127.0.0.1:8080:8080"]
+    volumes:
+      - ./dev-import:/opt/keycloak/data/import:ro
