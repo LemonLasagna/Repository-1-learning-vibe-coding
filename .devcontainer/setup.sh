@@ -14,7 +14,7 @@ echo "== PostgreSQL 16 and Java 21 =="
 sudo apt-get update -qq
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-16 postgresql-client-16 openjdk-21-jre-headless python3 curl
 sudo service postgresql start
-sudo -u postgres psql -qc "ALTER USER postgres PASSWORD '$PG_DEV_PASSWORD'"
+sudo runuser -u postgres -- psql -qc "ALTER USER postgres PASSWORD '$PG_DEV_PASSWORD'"
 
 echo "== Keycloak $KC_VERSION =="
 if [[ ! -x "$KC_HOME/bin/kc.sh" ]]; then
