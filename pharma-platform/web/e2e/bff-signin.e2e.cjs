@@ -1,5 +1,5 @@
-// End-to-end sign-in test against a real Keycloak (realm deploy/keycloak/dev-import/pharmaos-realm.json),
-// the backend in Development mode on :5080 and `ng serve` on :4200. See INSTALL.md, "Sign-in for development".
+// End-to-end sign-in and electronic-signature test against a real Keycloak (realm deploy/keycloak/dev-import/pharmaos-realm.json),
+// the backend in Development mode on :5080 and `ng serve` on :4200. See INSTALL.md, A5 and A6.
 // Run: node e2e/bff-signin.e2e.cjs   (needs playwright-core and a Chromium; CHROMIUM_PATH overrides the browser)
 'use strict';
 const { chromium } = require('playwright-core');
@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const BASE = process.env.E2E_BASE ?? 'http://localhost:4200';
 const PASSWORD = process.env.E2E_PASSWORD ?? 'Dev-Only-Pass-2026';
 const code = `E2E${Date.now().toString(36).toUpperCase()}`.slice(0, 12);
+let recordPath = '';
 
 async function signIn(page, login) {
   await page.goto(`${BASE}/uoms`);
@@ -56,7 +57,7 @@ async function step(name, fn) {
       const u = await page.evaluate(() => fetch('/bff/user').then((r) => r.json()));
       assert.equal(u.login, 'qa.analyst');
       assert.equal(u.tenantId, '0000000a-0000-0000-0000-000000000000');
-      assert.deepEqual(u.permissions, ['audit.trail:read', 'mdm.uom:read', 'mdm.uom:write']);
+      assert.deepEqual(u.permissions, ['audit.trail:read', 'esig.sign', 'mdm.uom:read', 'mdm.uom:write']);
       assert.ok(u.authTime, 'auth_time missing');
       assert.match(u.logoutUrl, /^\/bff\/logout\?sid=/);
     });
@@ -74,6 +75,7 @@ async function step(name, fn) {
       await form.getByRole('button', { name: 'Create' }).click();
       await page.waitForURL(/\/uoms\/[0-9a-f-]{36}$/);
       await page.getByRole('heading', { name: new RegExp(code) }).waitFor();
+      recordPath = new URL(page.url()).pathname;
     });
 
     await step('edit with a reason for change; audit trail names the signed-in user', async () => {
@@ -85,6 +87,16 @@ async function step(name, fn) {
       await trail.getByText('E2E: verify audit attribution').waitFor();
       const text = await trail.innerText();
       assert.match(text, /Quinn Analyst \(qa\.analyst\)/, `audit actor not shown: ${text}`);
+    });
+
+    await step('the last editor cannot approve: refused before any password is asked', async () => {
+      await page.getByRole('button', { name: 'Sign as Approved…' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Electronic signature' });
+      await dialog.getByText(`${code} (version 2)`).waitFor();
+      await dialog.locator('.ack input').check();
+      await dialog.getByRole('button', { name: 'Continue to sign' }).click();
+      await page.getByText('Another person must sign.').waitFor();
+      assert.equal(new URL(page.url()).origin, new URL(BASE).origin, 'should not have left for Keycloak');
     });
 
     await step('re-authentication asks Keycloak for the password again and refreshes auth_time', async () => {
@@ -125,6 +137,32 @@ async function step(name, fn) {
         body: JSON.stringify({ code: c + 'X', name: 'nope', dimension: 'MASS' }),
       }).then((r) => r.status), code);
       assert.equal(status, 403);
+    });
+
+    // ---- qa.approver: electronic signature through Keycloak re-authentication ----
+    const ap = await (await browser.newContext()).newPage();
+    await step('qa.approver signs as Approved; Keycloak asks for the password again', async () => {
+      await signIn(ap, 'qa.approver');
+      await ap.goto(`${BASE}${recordPath}`);
+      await ap.getByRole('heading', { name: new RegExp(code) }).waitFor();
+      await ap.getByRole('button', { name: 'Sign as Approved…' }).click();
+      const dialog = ap.getByRole('dialog', { name: 'Electronic signature' });
+      await dialog.getByText('Avery Approver (qa.approver)').waitFor();
+      assert.equal(await dialog.locator('input[type="password"]').count(), 0, 'the app must not ask for the password');
+      await dialog.locator('#esig-reason').fill('E2E: approved for use');
+      await dialog.locator('.ack input').check();
+      await dialog.getByRole('button', { name: 'Continue to sign' }).click();
+      await ap.waitForURL(/\/realms\/pharmaos\//);
+      await ap.locator('#password').waitFor(); // live SSO session, yet the password is required
+      await ap.fill('#password', PASSWORD);
+      await ap.click('#kc-login');
+      await ap.getByText('Signed: Approved by Avery Approver, version 2.').waitFor();
+      assert.equal(new URL(ap.url()).search, '', 'the used challenge must be dropped from the address');
+      const panel = ap.locator('pos-signatures');
+      await panel.getByText('current version').waitFor();
+      const text = await panel.innerText();
+      assert.match(text, /Approved by Avery Approver \(qa\.approver\)/);
+      assert.match(text, /Reason: E2E: approved for use/);
     });
 
     // Run last: it leaves Keycloak's SSO session belonging to read.only in this browser context.

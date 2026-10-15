@@ -56,6 +56,10 @@
         {
           "name": "audit.trail:read",
           "description": "PharmaOS permission audit.trail:read"
+        },
+        {
+          "name": "esig.sign",
+          "description": "PharmaOS permission esig.sign (execute electronic signatures; grant only after identity verification)"
         }
       ]
     }
@@ -156,7 +160,8 @@
         "pharmaos-web": [
           "mdm.uom:read",
           "mdm.uom:write",
-          "audit.trail:read"
+          "audit.trail:read",
+          "esig.sign"
         ]
       }
     },
@@ -182,6 +187,33 @@
       "clientRoles": {
         "pharmaos-web": [
           "mdm.uom:read"
+        ]
+      }
+    },
+    {
+      "username": "qa.approver",
+      "enabled": true,
+      "email": "qa.approver@example.test",
+      "emailVerified": true,
+      "firstName": "Avery",
+      "lastName": "Approver",
+      "attributes": {
+        "tenant_id": [
+          "0000000a-0000-0000-0000-000000000000"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev-Only-Pass-2026",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "pharmaos-web": [
+          "mdm.uom:read",
+          "audit.trail:read",
+          "esig.sign"
         ]
       }
     }

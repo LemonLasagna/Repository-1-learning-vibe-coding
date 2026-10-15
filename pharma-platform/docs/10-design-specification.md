@@ -109,6 +109,31 @@ signature_hash    = SHA-256(signer_id | meaning_code | signed_at(UTC ISO-8601) |
 - Re-authentication uses a Keycloak step-up: an OIDC authorization request with `acr_values=esig` and
   `max_age=0`. A FIDO2/WebAuthn authenticator or password + TOTP is configured per policy. The returned ID token
   must have `acr=esig`, `auth_time` ≥ challenge issue time, and `sub` = signer.
+
+**As implemented (R0).** `src/Hosts/PharmaOS.Platform.Host/ESignature/`, rules in `PharmaOS.ESig`.
+
+```
+1. POST /api/esig/v1/challenges          {entity, recordId, recordVersion, meaning, reason, acknowledge}
+     → server loads the record, refuses a version other than the one shown (409), checks segregation of
+       duties (403) before any password is typed, binds record_hash, stores the challenge (TTL 120 s)
+2. GET  /bff/reauth?returnUrl=…?esig={challengeId}
+     → Keycloak: prompt=login, max_age=0, login_hint; the same subject must complete it
+3. POST /api/esig/v1/challenges/{id}/complete
+     → locks the challenge; requires auth_time ≥ issue time (second resolution) and ≤ now + 30 s skew;
+       locks the record (FOR SHARE), re-verifies version and hash; inserts esig.signature (append-only,
+       audited by trigger), esig.signature_manifest and, on first use, esig.user_esig_acknowledgement;
+       consumes the challenge — all in one transaction
+   Any refusal consumes the challenge and writes esig.signature_failure in a separate transaction.
+GET /api/esig/v1/records/{entity}/{id}/signatures → each signature with appliesToCurrentVersion
+```
+
+| Topic | R0 behaviour | Gap to the design above |
+|---|---|---|
+| Step-up proof | `prompt=login` + `max_age=0`, `auth_time` after the challenge, same `sub` | No `acr=esig` level of authentication yet; it arrives with MFA (TOTP/WebAuthn) in the realm |
+| Meanings and policies | Standard set in code (`Reviewed`; `Approved` with four eyes: not the last editor of the version, not a reviewer of it) | `esig.signature_policy` rows and tenant-configured meanings come with configuration packages; `policy_id` is null |
+| Catalogue rows | `iam.app_user`, `meta.module`, `meta.entity_definition` and `esig.signature_meaning` rows are created on first use, attributed to the signer in the audit trail | Provisioning from an identity-access service |
+| Signed records | Units of measure (`mdm.uom`) | Each module registers an `ISignableSource` |
+| Signing time | Truncated to microseconds so `signature_hash` recomputes from the stored row | — |
 - The signature manifest text is rendered from the policy template and stored in `esig.signature_manifest`
   for human-readable output.
 - The display rule is that a record view always shows signatures with the version they apply to. A record

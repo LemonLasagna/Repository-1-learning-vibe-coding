@@ -3,7 +3,7 @@ import { Component, inject, OnInit, signal, viewChild } from '@angular/core';
 import { MetadataForm } from '../../core/metadata/metadata-form';
 import { RuntimeBundle, TransitionDef } from '../../core/metadata/runtime-bundle';
 import { canonicalJson, Json } from '../../core/rules/rule-evaluator';
-import { EsigDialog, SignIntent, SignSubmission } from '../../shared/esig-dialog';
+import { EsigDialog, SignConfirmation, SignIntent } from '../../shared/esig-dialog';
 
 /**
  * Demonstrates the metadata renderer and the signature flow on a Deviation bundle served as a
@@ -15,8 +15,9 @@ import { EsigDialog, SignIntent, SignSubmission } from '../../shared/esig-dialog
   imports: [MetadataForm, EsigDialog],
   template: `
     <p class="banner info" role="note">
-      Demo screen. The form is generated from <code>metadata/deviation.bundle.json</code>. The e-signature
-      and workflow services are not built yet, so signing here shows what would be sent and nothing is saved.
+      Demo screen. The form is generated from <code>metadata/deviation.bundle.json</code>. Deviation
+      records and the workflow service are not built yet, so signing here shows what would be sent and nothing is
+      saved. Real electronic signatures work on units of measure.
     </p>
     @if (error()) {<p class="banner error" role="alert">{{ error() }}</p>}
     @if (bundle(); as b) {
@@ -33,7 +34,7 @@ import { EsigDialog, SignIntent, SignSubmission } from '../../shared/esig-dialog
       @if (outcome()) {<p class="banner ok" role="status">{{ outcome() }}</p>}
     }
     @if (intent(); as i) {
-      <pos-esig-dialog [intent]="i" (signed)="onSigned($event)" (cancelled)="intent.set(null)" />
+      <pos-esig-dialog [intent]="i" (confirmed)="onSigned($event)" (cancelled)="intent.set(null)" />
     }
   `,
   styles: `
@@ -84,24 +85,26 @@ export class DeviationDemoPage implements OnInit {
       entity: 'DEVIATION',
       recordNumber: 'DEV-2026-00412',
       recordVersion: this.version,
-      recordHash: await sha256Hex(canonicalJson(form.rawValue())),
       meaningCode: t.signatureMeaning,
       meaningLabel: t.signatureMeaningLabel ?? t.signatureMeaning,
       meaningStatement: t.signatureStatement ?? '',
       signerName: 'Jane Doe',
       signerLogin: 'jdoe',
       reasonRequired: false,
-      secondFactorRequired: true,
+      acknowledgementText: null,
     });
+    this.recordHash = await sha256Hex(canonicalJson(form.rawValue()));
   }
 
-  onSigned(s: SignSubmission): void {
+  private recordHash = '';
+
+  onSigned(s: SignConfirmation): void {
     const i = this.intent();
     this.intent.set(null);
     this.outcome.set(
       `Signature intent prepared for "${this.pending?.label}" (${i?.meaningLabel}) on version ${i?.recordVersion}, ` +
-        `record hash ${i?.recordHash.slice(0, 12)}…${s.reason ? `, reason "${s.reason}"` : ''}. ` +
-        'Nothing was sent: the e-signature service is not built yet.',
+        `record hash ${this.recordHash.slice(0, 12)}…${s.reason ? `, reason "${s.reason}"` : ''}. ` +
+        'Nothing was sent: Deviation records are not stored yet. Units of measure can be signed for real.',
     );
   }
 }

@@ -1,31 +1,30 @@
-import { Component, computed, input, output, signal } from '@angular/core';
+import { Component, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
-/** What the user is about to sign: shown in full before any credential is entered (FS-ESIG-001). */
+/** What the user is about to sign: shown in full before they confirm (FS-ESIG-001). */
 export interface SignIntent {
   entity: string;
   recordNumber: string;
   recordVersion: number;
-  recordHash: string;
   meaningCode: string;
   meaningLabel: string;
   meaningStatement: string;
   signerName: string;
   signerLogin: string;
   reasonRequired: boolean;
-  secondFactorRequired: boolean;
+  /** The legally-binding statement, when the user has not acknowledged it yet; otherwise null. */
+  acknowledgementText: string | null;
 }
 
-export interface SignSubmission {
-  password: string;
-  otp: string | null;
+export interface SignConfirmation {
   reason: string | null;
+  acknowledged: boolean;
 }
 
 /**
- * Re-authentication dialog for an electronic signature (21 CFR Part 11 §11.50, §11.200).
- * It only collects credentials; the esignature service verifies them through a Keycloak step-up
- * and binds the result to the record hash (DS §10.5). Credentials are never stored client-side.
+ * Confirmation step of an electronic signature (21 CFR Part 11 §11.50, §11.200). The user sees what they
+ * sign and why, then continues to the sign-in page, which asks for the password again. The password is never
+ * typed into this application; the server binds the signature to the record version and hash.
  */
 @Component({
   selector: 'pos-esig-dialog',
@@ -36,37 +35,31 @@ export interface SignSubmission {
         <h2 id="esig-title">Electronic signature</h2>
         <dl class="intent">
           <dt>You are signing</dt>
-          <dd>{{ intent().recordNumber }} (version {{ intent().recordVersion }},
-            hash <code [title]="intent().recordHash">{{ shortHash() }}</code>)</dd>
+          <dd>{{ intent().recordNumber }} (version {{ intent().recordVersion }})</dd>
           <dt>Meaning</dt>
           <dd><strong>{{ intent().meaningLabel }}</strong>: "{{ intent().meaningStatement }}"</dd>
           <dt>Signer</dt>
           <dd>{{ intent().signerName }} ({{ intent().signerLogin }})</dd>
         </dl>
 
-        <form (ngSubmit)="submit()" #f="ngForm">
-          <label for="esig-user">User ID</label>
-          <input id="esig-user" [value]="intent().signerLogin" readonly />
-
-          <label for="esig-password">Password</label>
-          <input id="esig-password" type="password" name="password" autocomplete="current-password"
-            [(ngModel)]="password" required />
-
-          @if (intent().secondFactorRequired) {
-            <label for="esig-otp">One-time code</label>
-            <input id="esig-otp" name="otp" inputmode="numeric" autocomplete="one-time-code"
-              [(ngModel)]="otp" required />
-          }
-
+        <form (ngSubmit)="submit()">
           <label for="esig-reason">Reason / comment @if (intent().reasonRequired) {<span class="req">*</span>}</label>
-          <textarea id="esig-reason" name="reason" rows="2" [(ngModel)]="reason"
+          <textarea id="esig-reason" name="reason" rows="2" maxlength="1000" [(ngModel)]="reason"
             [required]="intent().reasonRequired"></textarea>
 
-          <p class="statement">This electronic signature is the legally binding equivalent of your handwritten signature.</p>
+          @if (intent().acknowledgementText; as text) {
+            <label class="ack">
+              <input type="checkbox" name="ack" [(ngModel)]="acknowledged" />
+              <span>{{ text }}</span>
+            </label>
+          }
+
+          <p class="next">Next, the sign-in page asks for your password to confirm that you are signing.
+            Your password is never entered in this application.</p>
 
           <div class="actions">
             <button type="button" class="secondary" (click)="cancelled.emit()">Cancel</button>
-            <button type="submit" [disabled]="!canSubmit()">Sign</button>
+            <button type="submit" [disabled]="!canSubmit()">Continue to sign</button>
           </div>
         </form>
       </div>
@@ -80,46 +73,33 @@ export interface SignSubmission {
     dt { color: var(--pos-muted); }
     dd { margin: 0; }
     form { display: flex; flex-direction: column; gap: 6px; }
-    .statement { font-size: 0.85rem; color: var(--pos-warning); margin: 8px 0; }
+    .ack { display: flex; gap: 8px; align-items: flex-start; font-size: 0.9rem; margin-top: 8px; }
+    .next { font-size: 0.85rem; color: var(--pos-muted); margin: 8px 0; }
     .actions { display: flex; justify-content: flex-end; gap: 8px; }
     .req { color: var(--pos-danger); }
   `,
 })
 export class EsigDialog {
   readonly intent = input.required<SignIntent>();
-  readonly signed = output<SignSubmission>();
+  readonly confirmed = output<SignConfirmation>();
   readonly cancelled = output<void>();
 
-  protected password = '';
-  protected otp = '';
   protected reason = '';
+  protected acknowledged = false;
   private readonly submitting = signal(false);
-
-  readonly shortHash = computed(() => {
-    const h = this.intent().recordHash;
-    return h.length > 12 ? `${h.slice(0, 4)}…${h.slice(-4)}` : h;
-  });
 
   canSubmit(): boolean {
     const i = this.intent();
     return (
       !this.submitting() &&
-      this.password.length > 0 &&
-      (!i.secondFactorRequired || this.otp.trim().length > 0) &&
-      (!i.reasonRequired || this.reason.trim().length > 0)
+      (!i.reasonRequired || this.reason.trim().length > 0) &&
+      (i.acknowledgementText === null || this.acknowledged)
     );
   }
 
   submit(): void {
     if (!this.canSubmit()) return;
     this.submitting.set(true);
-    const submission: SignSubmission = {
-      password: this.password,
-      otp: this.intent().secondFactorRequired ? this.otp.trim() : null,
-      reason: this.reason.trim() || null,
-    };
-    this.password = '';
-    this.otp = '';
-    this.signed.emit(submission);
+    this.confirmed.emit({ reason: this.reason.trim() || null, acknowledged: this.intent().acknowledgementText !== null });
   }
 }

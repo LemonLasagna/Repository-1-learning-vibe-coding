@@ -16,7 +16,7 @@ namespace PharmaOS.IntegrationTests;
 /// builds the same claims Keycloak would issue (sub, tenant_id, name, preferred_username, perm).
 /// The test scheme exists only in this test assembly.
 /// </summary>
-public sealed class PlatformFactory(PostgresFixture db) : WebApplicationFactory<Program>
+public sealed class PlatformFactory(PostgresFixture db, TimeProvider? time = null) : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -25,6 +25,7 @@ public sealed class PlatformFactory(PostgresFixture db) : WebApplicationFactory<
         builder.UseSetting("ConnectionStrings:AuditDb", db.AuditConnectionString);
         builder.ConfigureTestServices(services =>
         {
+            if (time is not null) services.AddSingleton(time);
             services.AddAuthentication(TestAuth.SchemeName)
                 .AddScheme<AuthenticationSchemeOptions, TestAuth>(TestAuth.SchemeName, _ => { });
             services.PostConfigure<AuthenticationOptions>(o =>
@@ -47,7 +48,19 @@ public sealed class PlatformFactory(PostgresFixture db) : WebApplicationFactory<
 
 public sealed record TestUser(Guid Sub, Guid Tenant, string Name, string Login, params string[] Permissions)
 {
-    public string Encode() => string.Join('|', Sub, Tenant, Name, Login, string.Join(',', Permissions));
+    /// <summary>The OIDC auth_time claim: when the user last typed their password.</summary>
+    public DateTimeOffset? AuthTime { get; init; }
+
+    public string Encode() => string.Join('|', Sub, Tenant, Name, Login, string.Join(',', Permissions),
+        AuthTime?.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "");
+}
+
+/// <summary>A clock the test moves forward by hand.</summary>
+public sealed class TestClock : TimeProvider
+{
+    public TimeSpan Offset { get; set; }
+
+    public override DateTimeOffset GetUtcNow() => base.GetUtcNow() + Offset;
 }
 
 public sealed class TestAuth(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder)
@@ -68,6 +81,7 @@ public sealed class TestAuth(IOptionsMonitor<AuthenticationSchemeOptions> option
             new("preferred_username", parts[3]),
         };
         claims.AddRange(parts[4].Split(',', StringSplitOptions.RemoveEmptyEntries).Select(p => new Claim("perm", p)));
+        if (parts.Length > 5 && parts[5].Length > 0) claims.Add(new Claim("auth_time", parts[5]));
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, SchemeName));
         return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, SchemeName)));
     }

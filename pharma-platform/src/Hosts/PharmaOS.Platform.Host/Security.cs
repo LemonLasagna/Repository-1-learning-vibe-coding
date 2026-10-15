@@ -11,6 +11,12 @@ public static class Permissions
     public const string AuditTrailRead = "audit.trail:read";
 
     /// <summary>
+    /// May execute electronic signatures. Grant only after the person's identity has been verified
+    /// (21 CFR Part 11 §11.100(b)); the Keycloak role assignment is that controlled step.
+    /// </summary>
+    public const string EsigSign = "esig.sign";
+
+    /// <summary>
     /// One policy per permission, satisfied by a "perm" claim. In production the identity-access service
     /// resolves role assignments (scoped to org nodes) into these claims; Keycloak roles are not used directly.
     /// </summary>

@@ -163,6 +163,68 @@ export class AuditApi {
   }
 }
 
+export interface SignatureMeaning {
+  code: string;
+  label: string;
+  statement: string;
+  requiresReason: boolean;
+  requiresSecondPerson: boolean;
+}
+
+export interface SigningOptions {
+  statement: { version: string; text: string; acknowledged: boolean };
+  meanings: SignatureMeaning[];
+}
+
+export interface Signature {
+  id: string;
+  signerName: string;
+  signerLogin: string | null;
+  meaning: string;
+  meaningLabel: string;
+  signedAt: string;
+  recordVersion: number;
+  recordHash: string;
+  reason: string | null;
+  manifest: string | null;
+  appliesToCurrentVersion: boolean;
+}
+
+export interface ChallengeRequest {
+  entity: string;
+  recordId: string;
+  recordVersion: number;
+  meaning: string;
+  reason: string | null;
+  acknowledge: boolean;
+}
+
+/**
+ * Electronic signatures: start a challenge, re-authenticate at Keycloak (AuthService.reauthenticate),
+ * then complete it. The server checks that the password was entered after the challenge was issued.
+ */
+@Injectable({ providedIn: 'root' })
+export class EsigApi {
+  private readonly http = inject(HttpClient);
+  private readonly base = `${inject(APP_CONFIG).apiBase}/api/esig/v1`;
+
+  options(entity: string): Observable<SigningOptions> {
+    return this.http.get<SigningOptions>(`${this.base}/meanings`, { params: { entity } });
+  }
+
+  challenge(req: ChallengeRequest): Observable<{ challengeId: string; expiresAt: string }> {
+    return this.http.post<{ challengeId: string; expiresAt: string }>(`${this.base}/challenges`, req);
+  }
+
+  complete(challengeId: string): Observable<Signature> {
+    return this.http.post<Signature>(`${this.base}/challenges/${challengeId}/complete`, null);
+  }
+
+  forRecord(entity: string, recordId: string): Observable<{ currentVersion: number; items: Signature[] }> {
+    return this.http.get<{ currentVersion: number; items: Signature[] }>(`${this.base}/records/${entity}/${recordId}/signatures`);
+  }
+}
+
 /** GxP timestamps are shown with their UTC offset (URS-GEN-003). */
 export function formatTimestamp(iso: string): string {
   const d = new Date(iso);
