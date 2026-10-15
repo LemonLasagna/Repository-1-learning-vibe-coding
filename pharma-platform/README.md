@@ -20,6 +20,7 @@ Capability comparisons with commercial products are about functional scope only.
 | `api/openapi/quality-v1.yaml` | Reference OpenAPI 3.1 contract (Quality service) | Reference |
 | `deploy/k8s/` | Kustomize base and overlays for tier M/L (on-prem RKE2) | Reference |
 | `src/`, `tests/`, `PharmaOS.slnx` | R0 code skeleton (.NET 10): GxP context, canonical JSON, rule engine, e-signature binding, workflow transitions, EF Core interceptor, reference API slice | **Builds with 0 warnings; 85 unit + 11 integration tests pass** |
+| `web/` | Angular 22 frontend: metadata-driven form renderer, TS rule evaluator (parity with C#), e-signature dialog, units-of-measure screens with audit trail | **70 tests pass; strict production build** |
 | `deploy/compose/` | Tier S single-server stack: PostgreSQL loads the schema at first start | Reference |
 
 ```bash
@@ -30,6 +31,7 @@ psql -v ON_ERROR_STOP=1 -d pharmaos -f database/tests/integrity_tests.sql
 dotnet test tests/PharmaOS.UnitTests                         # no database needed
 PHARMAOS_TEST_PG="Host=localhost;Username=postgres;Password=..." \
   dotnet test tests/PharmaOS.IntegrationTests                # creates and drops a throw-away database
+cd web && npm ci && npx ng test --watch=false && npx ng build   # Node 24 LTS (Angular 22 needs >= 22.22.3)
 ```
 
 ## Deliverables index

@@ -3,7 +3,9 @@
 > **Implemented so far (R0 skeleton, in this repo under `pharma-platform/`):** `PharmaOS.slnx`,
 > `src/BuildingBlocks/{PharmaOS.Gxp, PharmaOS.Rules, PharmaOS.ESig, PharmaOS.Workflow, PharmaOS.Persistence}`,
 > `src/Hosts/PharmaOS.Platform.Host` (reference vertical slice: units of measure + audit-trail API),
-> `tests/{PharmaOS.UnitTests, PharmaOS.IntegrationTests, rules-golden}`. Everything else in the tree below
+> `tests/{PharmaOS.UnitTests, PharmaOS.IntegrationTests, rules-golden}`, and `web/` (a plain Angular 22 CLI
+> workspace, not yet Nx: `core/rules`, `core/metadata`, `core/api`, `shared/esig-dialog`, `shared/audit-trail`,
+> `features/uom`, `features/deviation`). Everything else in the tree below
 > is the target layout. Building blocks are combined into fewer projects than listed below until they grow.
 
 Monorepo: one repository, one version per release, and atomic changes across the schema, services, and UI.

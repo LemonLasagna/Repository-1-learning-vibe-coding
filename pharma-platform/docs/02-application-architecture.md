@@ -149,7 +149,7 @@ silently allows the action.
 
 ## 2.7 Frontend architecture (Angular)
 
-- Nx monorepo. Angular 18+ standalone components, signals, and OnPush everywhere.
+- Angular 22 (zoneless, standalone components, signals). Started as a plain CLI workspace in `web/`; it moves to an Nx monorepo once a second app (shop-floor PWA) exists.
 - **Metadata renderer**: one generic record page, list page, and task page renders any entity from `meta.form_definition`.
   Dynamic forms use a schema-driven form library (e.g. ngx-formly) wrapped in a `pharmaos-field` component set.
   Hand-coded screens exist only where the UX is specialised (EBR execution, weighing, fishbone canvas,

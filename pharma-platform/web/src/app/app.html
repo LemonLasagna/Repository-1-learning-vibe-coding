@@ -1,0 +1,16 @@
+<header class="shell-header">
+  <a class="brand" routerLink="/">PharmaOS</a>
+  <nav aria-label="Main">
+    <a routerLink="/uoms" routerLinkActive="active">Units of measure</a>
+    <a routerLink="/demo/deviation" routerLinkActive="active">Deviation (demo)</a>
+  </nav>
+  <span class="env" [attr.data-env]="config.environment" title="Environment">{{ config.environment }}</span>
+</header>
+@if (!auth.accessToken()) {
+  <p class="banner warning signin" role="status">
+    Not signed in. Sign-in through the site's Keycloak is not wired up yet, so API calls will be rejected (401).
+  </p>
+}
+<main>
+  <router-outlet />
+</main>

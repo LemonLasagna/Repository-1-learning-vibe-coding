@@ -42,6 +42,7 @@ public static class UomEndpoints
     {
         var group = app.MapGroup(Base);
         group.MapPost("", Create).RequireAuthorization(Permissions.UomWrite);
+        group.MapGet("", List).RequireAuthorization(Permissions.UomRead);
         group.MapGet("{id:guid}", Get).RequireAuthorization(Permissions.UomRead);
         group.MapPatch("{id:guid}", Update).RequireAuthorization(Permissions.UomWrite);
     }
@@ -82,6 +83,17 @@ public static class UomEndpoints
 
         SetETag(http, uom.RowVersion);
         return Results.Created($"{Base}/{uom.Id}", UomResponse.From(uom));
+    }
+
+    private const int ListLimit = 500;
+
+    /// <summary>Master-data lists are small; paging (doc 21 cursor convention) arrives with the generic list API.</summary>
+    private static async Task<IResult> List(PlatformDbContext db, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var items = await db.Uoms.AsNoTracking().OrderBy(u => u.Code).Take(ListLimit).ToListAsync(ct);
+        await tx.CommitAsync(ct);
+        return Results.Ok(new { items = items.Select(UomResponse.From), truncated = items.Count == ListLimit });
     }
 
     private static async Task<IResult> Get(Guid id, PlatformDbContext db, HttpContext http, CancellationToken ct)

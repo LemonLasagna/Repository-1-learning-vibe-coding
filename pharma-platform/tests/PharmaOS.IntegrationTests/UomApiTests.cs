@@ -160,6 +160,22 @@ public sealed class UomApiTests : IClassFixture<PostgresFixture>, IDisposable
     }
 
     [Fact]
+    [Trait("Req", "URS-SEC-003")]
+    public async Task List_returns_only_own_tenant_records_sorted_by_code()
+    {
+        var mine = Code();
+        var theirs = Code();
+        await CreateAsync(_factory.ClientFor(Writer), mine);
+        await CreateAsync(_factory.ClientFor(OtherTenant), theirs);
+
+        var list = await _factory.ClientFor(ReadOnly).GetFromJsonAsync<JsonElement>("/api/mdm/v1/uoms");
+        var codes = list.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("code").GetString()!).ToList();
+        Assert.Contains(mine, codes);
+        Assert.DoesNotContain(theirs, codes);
+        Assert.Equal(codes.Order(StringComparer.Ordinal), codes);
+    }
+
+    [Fact]
     public async Task Anonymous_request_is_unauthorized_but_health_is_open()
     {
         var anon = _factory.CreateClient();

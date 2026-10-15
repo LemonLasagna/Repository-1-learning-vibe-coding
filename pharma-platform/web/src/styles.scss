@@ -1,0 +1,129 @@
+:root {
+  color-scheme: light dark;
+  --pos-bg: #f6f7f9;
+  --pos-surface: #ffffff;
+  --pos-text: #1b1f24;
+  --pos-muted: #5b6470;
+  --pos-border: #d7dce2;
+  --pos-accent: #0a66c2;
+  --pos-danger: #b42318;
+  --pos-warning: #8a5300;
+  --pos-ok: #1f7a3a;
+  --pos-env-dev: #5b6470;
+  --pos-env-val: #8a5300;
+  --pos-env-prod: #b42318;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pos-bg: #111418;
+    --pos-surface: #1a1e24;
+    --pos-text: #e8ebef;
+    --pos-muted: #a2abb6;
+    --pos-border: #333a43;
+    --pos-accent: #6cb4ff;
+    --pos-danger: #ff8a80;
+    --pos-warning: #f5c06b;
+    --pos-ok: #7ad79a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: var(--pos-bg);
+  color: var(--pos-text);
+  line-height: 1.4;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin: 8px 0 16px;
+}
+
+h2 {
+  font-size: 1.1rem;
+}
+
+a {
+  color: var(--pos-accent);
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+input,
+select,
+textarea {
+  background: var(--pos-surface);
+  border: 1px solid var(--pos-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  min-height: 36px;
+
+  &:disabled,
+  &[readonly] {
+    opacity: 0.75;
+  }
+
+  &.ng-invalid.ng-touched {
+    border-color: var(--pos-danger);
+  }
+}
+
+button {
+  min-height: 36px;
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--pos-accent);
+  background: var(--pos-accent);
+  color: #fff;
+  cursor: pointer;
+
+  &.secondary {
+    background: transparent;
+    color: var(--pos-accent);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--pos-accent);
+  outline-offset: 2px;
+}
+
+.banner {
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+  margin: 0 0 12px;
+
+  &.error {
+    color: var(--pos-danger);
+  }
+
+  &.warning {
+    color: var(--pos-warning);
+  }
+
+  &.info {
+    color: var(--pos-accent);
+  }
+
+  &.ok {
+    color: var(--pos-ok);
+  }
+}
