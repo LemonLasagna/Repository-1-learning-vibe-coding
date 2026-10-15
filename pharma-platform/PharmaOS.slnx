@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/BuildingBlocks/">
+    <Project Path="src/BuildingBlocks/PharmaOS.ESig/PharmaOS.ESig.csproj" />
+    <Project Path="src/BuildingBlocks/PharmaOS.Gxp/PharmaOS.Gxp.csproj" />
+    <Project Path="src/BuildingBlocks/PharmaOS.Persistence/PharmaOS.Persistence.csproj" />
+    <Project Path="src/BuildingBlocks/PharmaOS.Rules/PharmaOS.Rules.csproj" />
+    <Project Path="src/BuildingBlocks/PharmaOS.Workflow/PharmaOS.Workflow.csproj" />
+  </Folder>
+  <Folder Name="/src/Hosts/">
+    <Project Path="src/Hosts/PharmaOS.Platform.Host/PharmaOS.Platform.Host.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PharmaOS.IntegrationTests/PharmaOS.IntegrationTests.csproj" />
+    <Project Path="tests/PharmaOS.UnitTests/PharmaOS.UnitTests.csproj" />
+  </Folder>
+</Solution>

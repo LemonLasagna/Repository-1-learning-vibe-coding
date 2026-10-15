@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <ProjectReference Include="..\..\BuildingBlocks\PharmaOS.Gxp\PharmaOS.Gxp.csproj" />
+    <ProjectReference Include="..\..\BuildingBlocks\PharmaOS.Persistence\PharmaOS.Persistence.csproj" />
+  </ItemGroup>
+</Project>

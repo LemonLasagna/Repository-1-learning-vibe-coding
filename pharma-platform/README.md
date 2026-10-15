@@ -19,6 +19,7 @@ Capability comparisons with commercial products are about functional scope only.
 | `database/data-dictionary.md` | Column-level dictionary (generated) | Generated |
 | `api/openapi/quality-v1.yaml` | Reference OpenAPI 3.1 contract (Quality service) | Reference |
 | `deploy/k8s/` | Kustomize base and overlays for tier M/L (on-prem RKE2) | Reference |
+| `src/`, `tests/`, `PharmaOS.slnx` | R0 code skeleton (.NET 10): GxP context, canonical JSON, rule engine, e-signature binding, workflow transitions, EF Core interceptor, reference API slice | **Builds with 0 warnings; 85 unit + 11 integration tests pass** |
 | `deploy/compose/` | Tier S single-server stack: PostgreSQL loads the schema at first start | Reference |
 
 ```bash
@@ -26,6 +27,9 @@ python3 tools/schema_gen.py            # regenerate DDL + ERD + dictionary
 python3 tools/schema_gen.py --check    # CI: fail if generated files are stale
 for f in database/schema/0*.sql; do psql -v ON_ERROR_STOP=1 -d pharmaos -f "$f"; done
 psql -v ON_ERROR_STOP=1 -d pharmaos -f database/tests/integrity_tests.sql
+dotnet test tests/PharmaOS.UnitTests                         # no database needed
+PHARMAOS_TEST_PG="Host=localhost;Username=postgres;Password=..." \
+  dotnet test tests/PharmaOS.IntegrationTests                # creates and drops a throw-away database
 ```
 
 ## Deliverables index

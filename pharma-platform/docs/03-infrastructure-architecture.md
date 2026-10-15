@@ -47,7 +47,7 @@ licence text of the exact version you pin, and record it in the SBOM.
 | Time | chrony against a local GPS/PTP stratum-1 or the domain controllers | GPL-2.0 | — | Cloud time service |
 | Policy / image signing | Kyverno (Apache 2.0), Sigstore cosign (Apache 2.0) | Apache 2.0 | OPA Gatekeeper | — |
 
-**The application itself** (.NET 8 services, Angular frontend) is MIT-licensed upstream tooling. The platform
+**The application itself** (.NET 10 LTS services, Angular frontend) is MIT-licensed upstream tooling. The platform
 code's own licence is a business decision recorded in doc 20.
 
 ## 3.3 Deployment tiers

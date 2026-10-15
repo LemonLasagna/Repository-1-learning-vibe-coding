@@ -98,7 +98,7 @@ artefacts (DRAFT) ─┐
 ## 10.5 E-signature design
 
 ```
-canonical(record) = JCS (RFC 8785) JSON of: entity code, id, row_version, all non-volatile fields,
+canonical(record) = JCS-style JSON (RFC 8785 key ordering and whitespace; numbers as normalised exact decimals, not ECMAScript doubles — see PharmaOS.Gxp.CanonicalJson) of: entity code, id, row_version, all non-volatile fields,
                     ext, child collection hashes (ordered)
 record_hash       = SHA-256(canonical(record))
 signature_hash    = SHA-256(signer_id | meaning_code | signed_at(UTC ISO-8601) | entity | record_id |

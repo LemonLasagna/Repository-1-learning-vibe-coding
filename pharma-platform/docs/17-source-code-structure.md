@@ -1,5 +1,11 @@
 # 17. Source Code Structure
 
+> **Implemented so far (R0 skeleton, in this repo under `pharma-platform/`):** `PharmaOS.slnx`,
+> `src/BuildingBlocks/{PharmaOS.Gxp, PharmaOS.Rules, PharmaOS.ESig, PharmaOS.Workflow, PharmaOS.Persistence}`,
+> `src/Hosts/PharmaOS.Platform.Host` (reference vertical slice: units of measure + audit-trail API),
+> `tests/{PharmaOS.UnitTests, PharmaOS.IntegrationTests, rules-golden}`. Everything else in the tree below
+> is the target layout. Building blocks are combined into fewer projects than listed below until they grow.
+
 Monorepo: one repository, one version per release, and atomic changes across the schema, services, and UI.
 
 ```
@@ -7,7 +13,7 @@ pharmaos/
 ├── README.md
 ├── Directory.Build.props            # shared .NET settings: nullable, warnings-as-errors, analyzers
 ├── Directory.Packages.props         # central package versions
-├── global.json                      # pinned .NET SDK (8.0.x LTS)
+├── global.json                      # pinned .NET SDK (10.0.4xx, LTS; rollForward latestFeature)
 ├── PharmaOS.sln
 ├── database/
 │   ├── model/catalog.dsl            # source of truth (this repo)
@@ -149,7 +155,7 @@ public async Task<Result> BindSignatureAsync(Deviation dev, Guid signatureId, st
 
 ## 17.4 Conventions
 
-- C#: .NET 8 LTS, nullable enabled, `TreatWarningsAsErrors`, analyzers (Roslyn and security analyzers).
+- C#: .NET 10 LTS, chosen over the originally specified .NET 8 because .NET 8 support ends in Nov 2026 *(verify on Microsoft's support policy page)*. Nullable enabled, `TreatWarningsAsErrors`, analyzers (Roslyn and security analyzers).
   Records for DTOs. `TimeProvider` is injected everywhere (no `DateTime.Now`), which makes timer/escalation tests
   deterministic.
 - TS: strict mode, ESLint + Angular ESLint, no `any` in libs.
