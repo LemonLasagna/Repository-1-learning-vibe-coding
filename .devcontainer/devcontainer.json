@@ -1,5 +1,5 @@
 // PharmaOS in GitHub Codespaces (or any dev container host). DEVELOPMENT ONLY: demo data, known passwords.
-// First start installs everything (about 10–15 minutes); later starts take about a minute.
+// First start installs everything and runs all tests (about 3 minutes in CI); later starts take under a minute.
 // See pharma-platform/INSTALL.md, "Quickest path: GitHub Codespaces".
 {
   "name": "PharmaOS (development)",

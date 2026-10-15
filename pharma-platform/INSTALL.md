@@ -22,7 +22,8 @@ Development only: demo data and known passwords.
 1. On the repository page on GitHub, press **Code** → **Codespaces** → **Create codespace on main**
    (or on the branch you want).
 2. Wait. The first start installs PostgreSQL 16, .NET, Node, Java and Keycloak, then runs `./install.sh`
-   with the demo organisation, including every test: about 10–15 minutes. Press **View creation log** to
+   with the demo organisation, including every test: about 3 minutes on a GitHub Actions runner, likely longer on
+   the smallest codespace. Press **View creation log** to
    follow it. Later starts of the same codespace take about a minute.
 3. When the **PharmaOS** tab opens (port 4200), press **Sign in** and use `qa.analyst`, `qa.approver` or
    `read.only` with password `Dev-Only-Pass-2026`. If no tab opens, go to the **Ports** panel and open the
