@@ -1,6 +1,6 @@
 import { HttpClient, HttpErrorResponse, HttpHeaders, HttpInterceptorFn, HttpResponse } from '@angular/common/http';
 import { inject, Injectable, InjectionToken, signal } from '@angular/core';
-import { map, Observable } from 'rxjs';
+import { catchError, firstValueFrom, map, Observable, of } from 'rxjs';
 
 export interface AppConfig {
   /** Shown in the header so nobody executes validation scripts in PROD by mistake. */
@@ -13,29 +13,82 @@ export const APP_CONFIG = new InjectionToken<AppConfig>('APP_CONFIG', {
   factory: () => ({ environment: 'DEV', apiBase: '' }),
 });
 
+export interface SessionUser {
+  sub: string;
+  login: string;
+  name: string | null;
+  tenantId: string;
+  permissions: string[];
+  /** When the user last typed their credentials (ISO 8601); used for e-signature re-authentication. */
+  authTime: string | null;
+  logoutUrl: string | null;
+}
+
+/** Full-page navigation, injectable so tests can observe it instead of leaving the page. */
+export const NAVIGATE = new InjectionToken<(url: string) => void>('NAVIGATE', {
+  providedIn: 'root',
+  factory: () => (url: string) => window.location.assign(url),
+});
+
 /**
- * Holds the OIDC access token. Login against the customer's Keycloak (authorization code + PKCE)
- * plugs in here; the rest of the app only reads accessToken().
+ * Server-side session (backend-for-frontend). The browser never sees a token: the server keeps them,
+ * and this service only learns who is signed in from /bff/user. Sign-in and sign-out are full-page
+ * navigations to the server, which redirects to and from Keycloak.
  */
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  readonly accessToken = signal<string | null>(null);
+  private readonly http = inject(HttpClient);
+  private readonly navigate = inject(NAVIGATE);
+  private readonly base = inject(APP_CONFIG).apiBase;
+
+  /** undefined while loading, null when signed out. */
+  readonly user = signal<SessionUser | null | undefined>(undefined);
+
+  load(): Promise<SessionUser | null> {
+    return firstValueFrom(
+      this.http.get<SessionUser>(`${this.base}/bff/user`).pipe(catchError(() => of(null))),
+    ).then((u) => {
+      this.user.set(u);
+      return u;
+    });
+  }
+
+  hasPermission(permission: string): boolean {
+    return this.user()?.permissions.includes(permission) ?? false;
+  }
+
+  login(returnUrl: string = currentPath()): void {
+    this.navigate(`${this.base}/bff/login?returnUrl=${encodeURIComponent(returnUrl)}`);
+  }
+
+  /** Forces Keycloak to ask for the password again (e-signature), then returns here. */
+  reauthenticate(returnUrl: string = currentPath()): void {
+    this.navigate(`${this.base}/bff/reauth?returnUrl=${encodeURIComponent(returnUrl)}`);
+  }
+
+  logout(): void {
+    const url = this.user()?.logoutUrl;
+    if (url) this.navigate(`${this.base}${url}`);
+  }
 }
 
-/** Adds the bearer token and a correlation id that the API copies into the audit trail. */
-export const gxpHttpInterceptor: HttpInterceptorFn = (req, next) => {
-  const token = inject(AuthService).accessToken();
-  let headers = req.headers.set('X-Correlation-Id', crypto.randomUUID());
-  if (token) headers = headers.set('Authorization', `Bearer ${token}`);
-  return next(req.clone({ headers }));
-};
+function currentPath(): string {
+  return `${window.location.pathname}${window.location.search}`;
+}
+
+/**
+ * Adds the CSRF header the server requires on every API call made with the session cookie, and a
+ * correlation id the API copies into the audit trail.
+ */
+export const gxpHttpInterceptor: HttpInterceptorFn = (req, next) =>
+  next(req.clone({ headers: req.headers.set('X-CSRF', '1').set('X-Correlation-Id', crypto.randomUUID()) }));
 
 /** Turns an HTTP error into one sentence a user can act on. Problem Details (RFC 9457) first. */
 export function describeError(err: unknown): string {
   if (!(err instanceof HttpErrorResponse)) return 'Unexpected error.';
   const p = err.error as { title?: string; detail?: string; errors?: Record<string, string[]> } | null;
   if (err.status === 0) return 'The server cannot be reached.';
-  if (err.status === 401) return 'You are not signed in, or your session has expired.';
+  if (err.status === 401) return 'Your session has ended. Sign in again to continue.';
   if (err.status === 403) return p?.detail ?? 'You do not have permission for this action.';
   if (p?.errors) {
     return Object.entries(p.errors)

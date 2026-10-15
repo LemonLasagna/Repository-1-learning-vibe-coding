@@ -36,10 +36,11 @@ public sealed class PlatformFactory(PostgresFixture db) : WebApplicationFactory<
         });
     }
 
-    public HttpClient ClientFor(TestUser user)
+    public HttpClient ClientFor(TestUser user, bool csrf = true)
     {
         var client = CreateClient();
         client.DefaultRequestHeaders.Add(TestAuth.Header, user.Encode());
+        if (csrf) client.DefaultRequestHeaders.Add("X-CSRF", "1");
         return client;
     }
 }

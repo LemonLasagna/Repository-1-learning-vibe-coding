@@ -15,19 +15,27 @@ describe('API layer', () => {
 
   afterEach(() => http.verify());
 
-  it('adds a correlation id to every request and the bearer token when signed in', () => {
-    const client = TestBed.inject(HttpClient);
-    client.get('/x').subscribe();
-    const anonymous = http.expectOne('/x');
-    expect(anonymous.request.headers.get('X-Correlation-Id')).toMatch(/^[0-9a-f-]{36}$/);
-    expect(anonymous.request.headers.has('Authorization')).toBe(false);
-    anonymous.flush({});
+  it('sends the CSRF header and a correlation id, and never an Authorization header', () => {
+    TestBed.inject(HttpClient).get('/api/x').subscribe();
+    const req = http.expectOne('/api/x');
+    expect(req.request.headers.get('X-CSRF')).toBe('1');
+    expect(req.request.headers.get('X-Correlation-Id')).toMatch(/^[0-9a-f-]{36}$/);
+    expect(req.request.headers.has('Authorization')).toBe(false);
+    req.flush({});
+  });
 
-    TestBed.inject(AuthService).accessToken.set('abc');
-    client.get('/y').subscribe();
-    const signedIn = http.expectOne('/y');
-    expect(signedIn.request.headers.get('Authorization')).toBe('Bearer abc');
-    signedIn.flush({});
+  it('loads the signed-in user, or null when the session is missing', async () => {
+    const auth = TestBed.inject(AuthService);
+    const first = auth.load();
+    http.expectOne('/bff/user').flush({ sub: 's', login: 'qa.analyst', name: null, tenantId: 't', permissions: ['a'], authTime: null, logoutUrl: null });
+    expect((await first)?.login).toBe('qa.analyst');
+    expect(auth.hasPermission('a')).toBe(true);
+    expect(auth.hasPermission('b')).toBe(false);
+
+    const second = auth.load();
+    http.expectOne('/bff/user').flush(null, { status: 401, statusText: 'Unauthorized' });
+    expect(await second).toBeNull();
+    expect(auth.user()).toBeNull();
   });
 
   it('update sends If-Match and the reason for change, and returns the new ETag', () => {
@@ -51,7 +59,7 @@ describe('API layer', () => {
     const err = (status: number, error: unknown) => new HttpErrorResponse({ status, error });
     expect(describeError(err(412, { title: 'Stale version', detail: 'Reload it.' }))).toBe('Reload it.');
     expect(describeError(err(400, { errors: { code: ['Required.'] } }))).toBe('code: Required.');
-    expect(describeError(err(401, null))).toContain('not signed in');
+    expect(describeError(err(401, null))).toContain('Sign in again');
     expect(describeError(err(0, null))).toContain('cannot be reached');
   });
 });

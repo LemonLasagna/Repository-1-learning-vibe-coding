@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using PharmaOS.Gxp;
@@ -6,6 +5,7 @@ using PharmaOS.Persistence;
 using PharmaOS.Platform.Host;
 using PharmaOS.Platform.Host.Audit;
 using PharmaOS.Platform.Host.MasterData;
+using PharmaOS.Platform.Host.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,16 +14,8 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IGxpContextAccessor, HttpGxpContextAccessor>();
 builder.Services.AddScoped<GxpSessionInterceptor>();
 
-builder.Services
-    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(o =>
-    {
-        // Keycloak realm on the customer's own network (doc 03). Claims are used as issued.
-        o.Authority = builder.Configuration["Oidc:Authority"];
-        o.Audience = builder.Configuration["Oidc:Audience"];
-        o.MapInboundClaims = false;
-        o.RequireHttpsMetadata = builder.Configuration.GetValue("Oidc:RequireHttpsMetadata", true);
-    });
+// Keycloak on the customer's own network (doc 03): server-side session for the web app, bearer for machines.
+builder.AddPharmaOsAuthentication();
 builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
     .AddPermissionPolicy(Permissions.UomRead)
@@ -44,6 +36,7 @@ var app = builder.Build();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseAuthentication();
+app.UseCsrfHeaderCheck();
 app.UseAuthorization();
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" })).AllowAnonymous();
@@ -51,6 +44,7 @@ app.MapGet("/health/ready", async (PlatformDbContext db, CancellationToken ct) =
         await db.Database.CanConnectAsync(ct) ? Results.Ok(new { status = "ready" }) : Results.StatusCode(503))
     .AllowAnonymous();
 
+app.MapBffEndpoints();
 app.MapUomEndpoints();
 app.MapAuditEndpoints();
 

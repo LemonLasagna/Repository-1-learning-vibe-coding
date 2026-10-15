@@ -2,6 +2,7 @@
   <ItemGroup>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
     <ProjectReference Include="..\..\BuildingBlocks\PharmaOS.Gxp\PharmaOS.Gxp.csproj" />
     <ProjectReference Include="..\..\BuildingBlocks\PharmaOS.Persistence\PharmaOS.Persistence.csproj" />
   </ItemGroup>
