@@ -6,9 +6,41 @@ using PharmaOS.ESig;
 
 namespace PharmaOS.Platform.Host.ESignature;
 
+/// <summary>
+/// The login is already recorded for a different identity-provider subject: user ids are never reassigned
+/// (doc 14), so this needs an administrator, not a silent re-link.
+/// </summary>
+public sealed class IdentityConflictException(string login)
+    : Exception($"The login '{login}' is already linked to a different identity in PharmaOS.")
+{
+    public string Login { get; } = login;
+}
+
+/// <summary>Answers <see cref="IdentityConflictException"/> with 409 instead of a server error.</summary>
+public sealed class IdentityConflictHandler(IProblemDetailsService problems) : Microsoft.AspNetCore.Diagnostics.IExceptionHandler
+{
+    public async ValueTask<bool> TryHandleAsync(HttpContext http, Exception exception, CancellationToken ct)
+    {
+        if (exception is not IdentityConflictException e) return false;
+        http.Response.StatusCode = StatusCodes.Status409Conflict;
+        return await problems.TryWriteAsync(new ProblemDetailsContext
+        {
+            HttpContext = http,
+            ProblemDetails =
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "Identity conflict",
+                Detail = $"{e.Message} An administrator must resolve it; user ids are never reassigned.",
+                Extensions = { ["code"] = "IDENTITY_CONFLICT" },
+            },
+        });
+    }
+}
+
 /// <summary>What the signer saw and agreed to sign, held by the challenge until the signature completes.</summary>
 public sealed record ChallengeIntent(
-    string Entity, Guid RecordId, int RecordVersion, string RecordHash, string Meaning, string? Reason, bool Acknowledge);
+    string Entity, Guid RecordId, int RecordVersion, string RecordHash, string Meaning, string? Reason, bool Acknowledge,
+    string? Action = null);
 
 public sealed record ChallengeRow(Guid UserId, DateTimeOffset IssuedAt, DateTimeOffset ExpiresAt, DateTimeOffset? ConsumedAt, ChallengeIntent Intent);
 
@@ -54,7 +86,14 @@ public sealed class EsigStore(NpgsqlConnection conn, NpgsqlTransaction tx)
         cmd.Parameters.AddWithValue("name", displayName);
         cmd.Parameters.AddWithValue("email", email ?? "");
         cmd.Parameters.AddWithValue("sub", ctx.UserId.ToString("D"));
-        await cmd.ExecuteNonQueryAsync(ct);
+        try
+        {
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            throw new IdentityConflictException(login);
+        }
     }
 
     /// <summary>Module and entity definition rows for a signable record type (the signature references them).</summary>
@@ -125,15 +164,15 @@ public sealed class EsigStore(NpgsqlConnection conn, NpgsqlTransaction tx)
         return await cmd.ExecuteScalarAsync(ct) is not null;
     }
 
-    public async Task<IReadOnlyList<PriorSignature>> SignaturesOnVersionAsync(Guid entityDefinitionId, Guid recordId, int version, CancellationToken ct)
+    /// <summary>Every signature on the record, any version: segregation of duties looks at the whole history.</summary>
+    public async Task<IReadOnlyList<PriorSignature>> SignaturesOnRecordAsync(Guid entityDefinitionId, Guid recordId, CancellationToken ct)
     {
         await using var cmd = Cmd("""
             SELECT s.signer_id, m.code FROM esig.signature s JOIN esig.signature_meaning m ON m.id = s.meaning_id
-             WHERE s.entity_definition_id = @ed AND s.record_id = @record AND s.record_version = @version
+             WHERE s.entity_definition_id = @ed AND s.record_id = @record
             """);
         cmd.Parameters.AddWithValue("ed", entityDefinitionId);
         cmd.Parameters.AddWithValue("record", recordId);
-        cmd.Parameters.AddWithValue("version", version.ToString(System.Globalization.CultureInfo.InvariantCulture));
         var list = new List<PriorSignature>();
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct)) list.Add(new PriorSignature(r.GetGuid(0), r.GetString(1)));

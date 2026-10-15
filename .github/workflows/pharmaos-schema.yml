@@ -159,8 +159,8 @@ jobs:
           cache-dependency-path: pharma-platform/web/package-lock.json
       - name: Start Keycloak with the development realm
         run: docker compose -f deploy/keycloak/docker-compose.dev.yml up -d
-      - name: Create the database (installer, no frontend, no smoke check)
-        run: ./install.sh --non-interactive --pg-host localhost --db pharmaos_e2e --skip-web --skip-smoke
+      - name: Create the database with the demo organisation (installer, no frontend, no smoke check)
+        run: ./install.sh --non-interactive --pg-host localhost --db pharmaos_e2e --skip-web --skip-smoke --demo-data
       - name: Start the backend (Development settings point at the local Keycloak)
         run: |
           set -a; source pharmaos.env; set +a
@@ -178,7 +178,7 @@ jobs:
             for i in $(seq 1 90); do curl -fsS -o /dev/null "$url" && break; sleep 2; done
             curl -fsS -o /dev/null "$url" || { echo "not ready: $url"; exit 1; }
           done
-      - name: End-to-end sign-in test
+      - name: End-to-end tests (sign-in, e-signatures, deviation lifecycle)
         working-directory: pharma-platform/web
         env:
           CHROMIUM_PATH: /usr/bin/google-chrome

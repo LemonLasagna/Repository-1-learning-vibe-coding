@@ -37,6 +37,34 @@ public class WorkflowTests
     }
 
     [Fact]
+    public void Denials_say_why_so_the_api_can_answer_409_403_or_422()
+    {
+        var guarded = new WorkflowDefinition("T", 1, "A",
+        [
+            new("go", "A", "B", Permission: "p", Guard: JsonNode.Parse("""{"not":{"isEmpty":{"var":"x"}}}"""),
+                GuardMessage: "Enter x first."),
+        ]);
+        Assert.Equal(new TransitionDecision.Denied("Action 'nope' is not available in state 'A'", DenialKind.NotAvailable),
+            TransitionEvaluator.Evaluate(guarded, "A", "nope", new JsonObject(), new HashSet<string> { "p" }, false));
+        Assert.Equal(DenialKind.MissingPermission,
+            ((TransitionDecision.Denied)TransitionEvaluator.Evaluate(guarded, "A", "go", new JsonObject(), new HashSet<string>(), false)).Kind);
+        Assert.Equal(new TransitionDecision.Denied("Enter x first.", DenialKind.GuardFailed),
+            TransitionEvaluator.Evaluate(guarded, "A", "go", new JsonObject { ["x"] = "" }, new HashSet<string> { "p" }, false));
+        Assert.Equal(new TransitionDecision.Allowed("B"),
+            TransitionEvaluator.Evaluate(guarded, "A", "go", new JsonObject { ["x"] = "done" }, new HashSet<string> { "p" }, false));
+    }
+
+    [Fact]
+    public void Same_action_name_may_leave_different_states()
+    {
+        var def = new WorkflowDefinition("T", 1, "A",
+            [new("cancel", "A", "X", RequireReason: true), new("next", "A", "B"), new("cancel", "B", "X", RequireReason: true)]);
+        Assert.Equal("X", TransitionEvaluator.Find(def, "B", "cancel")!.To);
+        Assert.True(TransitionEvaluator.Find(def, "A", "cancel")!.RequireReason);
+        Assert.Null(TransitionEvaluator.Find(def, "X", "cancel"));
+    }
+
+    [Fact]
     [Trait("Req", "URS-SEC-003")]
     public void Missing_permission_is_denied_before_signature_is_requested()
     {

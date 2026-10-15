@@ -1,217 +1,67 @@
 {
-  "entity": "DEVIATION",
+  "entity": "qms.deviation",
   "entityLabel": "Deviation",
-  "bundleVersion": "DEV_DEFAULT v3 / DEVIATION_STD v5",
-  "workflowState": "INVESTIGATION",
+  "bundleVersion": "DEV_DEFAULT v4 / DEVIATION_STD v1",
+  "workflowState": "*",
   "fields": [
+    { "code": "title", "label": "Title", "type": "text", "required": true, "maxLength": 1000 },
     {
-      "code": "title",
-      "label": "Title",
-      "type": "text",
-      "required": true,
-      "maxLength": 1000
-    },
-    {
-      "code": "classification",
-      "label": "Classification",
-      "type": "lookup",
-      "required": true,
+      "code": "classification", "label": "Classification", "type": "lookup", "required": true,
+      "help": "QA confirms the classification at triage.",
       "options": [
-        {
-          "code": "MINOR",
-          "label": "Minor"
-        },
-        {
-          "code": "MAJOR",
-          "label": "Major"
-        },
-        {
-          "code": "CRITICAL",
-          "label": "Critical"
-        }
+        { "code": "MINOR", "label": "Minor" },
+        { "code": "MAJOR", "label": "Major" },
+        { "code": "CRITICAL", "label": "Critical" }
       ]
     },
     {
-      "code": "occurred_at",
-      "label": "Occurred at",
-      "type": "datetime",
-      "required": true,
-      "help": "Site time zone."
-    },
-    {
-      "code": "description",
-      "label": "Description",
-      "type": "longtext",
-      "required": true
-    },
-    {
-      "code": "is_planned",
-      "label": "Planned deviation",
-      "type": "boolean"
-    },
-    {
-      "code": "planned_justification",
-      "label": "Justification for planned deviation",
-      "type": "longtext"
-    },
-    {
-      "code": "qa_owner",
-      "label": "QA owner",
-      "type": "lookup",
+      "code": "deviation_type", "label": "Type", "type": "lookup", "required": true,
       "options": [
-        {
-          "code": "skeller",
-          "label": "S. Keller"
-        },
-        {
-          "code": "mroth",
-          "label": "M. Roth"
-        }
+        { "code": "PROCESS", "label": "Process" },
+        { "code": "EQUIPMENT", "label": "Equipment" },
+        { "code": "MATERIAL", "label": "Material" },
+        { "code": "DOCUMENTATION", "label": "Documentation" },
+        { "code": "ENVIRONMENT", "label": "Environment" },
+        { "code": "OTHER", "label": "Other" }
       ]
     },
+    { "code": "occurred_at", "label": "Occurred at", "type": "datetime", "required": true, "help": "Your local time; stored with its UTC offset." },
     {
-      "code": "batches_affected",
-      "label": "Batches affected",
-      "type": "number",
-      "unit": "batches"
-    },
-    {
-      "code": "impact_assessment",
-      "label": "Product impact assessment",
-      "type": "longtext"
-    },
-    {
-      "code": "root_cause_summary",
-      "label": "Root cause summary",
-      "type": "longtext"
-    },
-    {
-      "code": "shift",
-      "label": "Shift (site field)",
-      "type": "lookup",
+      "code": "shift", "label": "Shift (site field)", "type": "lookup",
       "options": [
-        {
-          "code": "EARLY",
-          "label": "Early"
-        },
-        {
-          "code": "LATE",
-          "label": "Late"
-        },
-        {
-          "code": "NIGHT",
-          "label": "Night"
-        }
+        { "code": "EARLY", "label": "Early" },
+        { "code": "LATE", "label": "Late" },
+        { "code": "NIGHT", "label": "Night" }
       ]
-    }
+    },
+    { "code": "description", "label": "Description", "type": "longtext", "required": true, "maxLength": 20000 },
+    { "code": "is_planned", "label": "Planned deviation", "type": "boolean" },
+    { "code": "planned_justification", "label": "Justification for planned deviation", "type": "longtext", "maxLength": 2000 },
+    { "code": "immediate_action", "label": "Immediate action taken", "type": "longtext", "maxLength": 20000 },
+    { "code": "batches_affected", "label": "Batches affected", "type": "number", "unit": "batches" },
+    { "code": "impact_assessment", "label": "Product impact assessment", "type": "longtext", "maxLength": 20000,
+      "help": "Needed before approval for major and critical deviations." },
+    { "code": "root_cause_summary", "label": "Root cause summary", "type": "longtext", "maxLength": 20000,
+      "help": "Needed before submitting for QA approval." },
+    { "code": "risk_score", "label": "Risk score (RPN)", "type": "number", "help": "Severity × occurrence × detectability, 1–125." },
+    { "code": "due_date", "label": "Due date", "type": "date", "help": "30 days from discovery unless QA sets another at triage." }
   ],
   "sections": [
     {
-      "code": "event",
-      "title": "Event",
-      "fields": [
-        "title",
-        "classification",
-        "occurred_at",
-        "shift",
-        "description",
-        "is_planned",
-        "planned_justification"
-      ]
+      "code": "event", "title": "Event",
+      "fields": ["title", "classification", "deviation_type", "occurred_at", "shift", "description", "is_planned", "planned_justification", "immediate_action"]
     },
     {
-      "code": "assessment",
-      "title": "Assessment",
-      "fields": [
-        "qa_owner",
-        "batches_affected",
-        "impact_assessment",
-        "root_cause_summary"
-      ],
-      "visibleWhen": {
-        "!=": [
-          {
-            "var": "classification"
-          },
-          null
-        ]
-      }
+      "code": "investigation", "title": "Investigation",
+      "fields": ["batches_affected", "impact_assessment", "root_cause_summary", "risk_score", "due_date"],
+      "visibleWhen": { "!=": [{ "var": "classification" }, null] }
     }
   ],
-  "stateAccess": {
-    "title": "read",
-    "occurred_at": "read",
-    "root_cause_summary": "required"
-  },
+  "stateAccess": {},
   "rules": [
-    {
-      "code": "R-PLANNED-JUSTIFY",
-      "effect": "hide",
-      "fields": [
-        "planned_justification"
-      ],
-      "when": {
-        "not": {
-          "var": "is_planned"
-        }
-      }
-    },
-    {
-      "code": "R-PLANNED-REQUIRED",
-      "effect": "require",
-      "fields": [
-        "planned_justification"
-      ],
-      "when": {
-        "var": "is_planned"
-      }
-    },
-    {
-      "code": "R-MAJOR-QA",
-      "effect": "require",
-      "fields": [
-        "qa_owner",
-        "impact_assessment"
-      ],
-      "when": {
-        "in": [
-          {
-            "var": "classification"
-          },
-          [
-            "MAJOR",
-            "CRITICAL"
-          ]
-        ]
-      }
-    },
-    {
-      "code": "R-MINOR-NO-BATCHES",
-      "effect": "hide",
-      "fields": [
-        "batches_affected"
-      ],
-      "when": {
-        "==": [
-          {
-            "var": "classification"
-          },
-          "MINOR"
-        ]
-      }
-    }
+    { "code": "R-PLANNED-JUSTIFY", "effect": "hide", "fields": ["planned_justification"], "when": { "not": { "var": "is_planned" } } },
+    { "code": "R-PLANNED-REQUIRED", "effect": "require", "fields": ["planned_justification"], "when": { "var": "is_planned" } },
+    { "code": "R-MINOR-NO-BATCHES", "effect": "hide", "fields": ["batches_affected"], "when": { "==": [{ "var": "classification" }, "MINOR"] } }
   ],
-  "transitions": [
-    {
-      "action": "request_info",
-      "label": "Request information"
-    },
-    {
-      "action": "submit_review",
-      "label": "Submit for QA review",
-      "signatureMeaning": "REVIEWED",
-      "signatureMeaningLabel": "Reviewed",
-      "signatureStatement": "I have reviewed the investigation and impact assessment and submit them for QA review."
-    }
-  ]
+  "transitions": []
 }

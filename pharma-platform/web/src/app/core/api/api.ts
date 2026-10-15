@@ -197,6 +197,8 @@ export interface ChallengeRequest {
   meaning: string;
   reason: string | null;
   acknowledge: boolean;
+  /** Workflow action the signature authorises (e.g. "approve"); required for deviations. */
+  action?: string;
 }
 
 /**

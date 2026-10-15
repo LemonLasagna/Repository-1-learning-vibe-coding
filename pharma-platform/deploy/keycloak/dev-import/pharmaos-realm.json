@@ -60,6 +60,22 @@
         {
           "name": "esig.sign",
           "description": "PharmaOS permission esig.sign (execute electronic signatures; grant only after identity verification)"
+        },
+        {
+          "name": "qms.deviation:read",
+          "description": "PharmaOS permission qms.deviation:read (read deviations)"
+        },
+        {
+          "name": "qms.deviation:write",
+          "description": "PharmaOS permission qms.deviation:write (raise deviations and work on them as owner)"
+        },
+        {
+          "name": "qms.deviation:triage",
+          "description": "PharmaOS permission qms.deviation:triage (QA: triage, classify, set due date)"
+        },
+        {
+          "name": "qms.deviation:approve",
+          "description": "PharmaOS permission qms.deviation:approve (QA: approve and close, or return to investigation)"
         }
       ]
     }
@@ -161,7 +177,9 @@
           "mdm.uom:read",
           "mdm.uom:write",
           "audit.trail:read",
-          "esig.sign"
+          "esig.sign",
+          "qms.deviation:read",
+          "qms.deviation:write"
         ]
       }
     },
@@ -186,7 +204,8 @@
       ],
       "clientRoles": {
         "pharmaos-web": [
-          "mdm.uom:read"
+          "mdm.uom:read",
+          "qms.deviation:read"
         ]
       }
     },
@@ -213,7 +232,10 @@
         "pharmaos-web": [
           "mdm.uom:read",
           "audit.trail:read",
-          "esig.sign"
+          "esig.sign",
+          "qms.deviation:read",
+          "qms.deviation:triage",
+          "qms.deviation:approve"
         ]
       }
     }

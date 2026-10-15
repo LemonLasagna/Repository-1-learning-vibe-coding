@@ -6,5 +6,6 @@
     <ProjectReference Include="..\..\BuildingBlocks\PharmaOS.Gxp\PharmaOS.Gxp.csproj" />
     <ProjectReference Include="..\..\BuildingBlocks\PharmaOS.ESig\PharmaOS.ESig.csproj" />
     <ProjectReference Include="..\..\BuildingBlocks\PharmaOS.Persistence\PharmaOS.Persistence.csproj" />
+    <ProjectReference Include="..\..\BuildingBlocks\PharmaOS.Workflow\PharmaOS.Workflow.csproj" />
   </ItemGroup>
 </Project>

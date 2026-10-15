@@ -71,6 +71,25 @@ Guards: Closed requires all linked CAPA in state ≥ "Plan Approved", batch impa
 Timers: 30 business days → L1 escalation; 45 → L2; due-date extension sub-process (qms.due_date_extension).
 ```
 
+**As implemented (R0).** `DeviationWorkflow` in `src/Hosts/PharmaOS.Platform.Host/Qms/`, code-defined as `DEVIATION_STD` v1
+(its JSON is stored in `wf.process_definition`; each instance records the version it runs under). The minor path:
+
+| From | Action | To | Who (permission) | Signature | Guard / reason |
+|---|---|---|---|---|---|
+| Draft | submit | Triage | `qms.deviation:write` | Authored | Planned deviation needs a justification |
+| Draft | cancel | Cancelled | `qms.deviation:write` | Cancelled | Reason required |
+| Triage | start_investigation | Investigation | `qms.deviation:triage` (becomes QA owner) | — | — |
+| Triage | cancel | Cancelled | `qms.deviation:triage` | Cancelled | Reason required |
+| Investigation | submit_for_approval | QA Approval | `qms.deviation:write` | — | Root cause; impact assessment for major/critical |
+| QA Approval | approve | Closed | `qms.deviation:approve` | Approved (four eyes: not the last editor, not an author or reviewer) | — |
+| QA Approval | reject | Investigation | `qms.deviation:approve` | — | Reason required |
+
+Signed transitions run through the e-signature service: the challenge carries the action, and the signature and
+the state change commit in one transaction. Field editability is per state and enforced by the server; a reason
+for change is required after Draft. History is written to `wf.process_history` with the signature id.
+Not yet: the major/critical branch with parallel QA and production review, timers and escalation, the
+CAPA and batch-impact guards on closure, due-date extensions, and task inboxes.
+
 ### 9.3.2 Reference workflow: CAPA
 `Draft → Plan Review✍ → Plan Approved → Implementation (actions tracked) → Implementation Verified✍ →
 Effectiveness Check Pending (timer = planned date) → Effectiveness Verified✍ → Closed | Ineffective → new CAPA`

@@ -6,11 +6,13 @@ using PharmaOS.Platform.Host;
 using PharmaOS.Platform.Host.Audit;
 using PharmaOS.Platform.Host.ESignature;
 using PharmaOS.Platform.Host.MasterData;
+using PharmaOS.Platform.Host.Qms;
 using PharmaOS.Platform.Host.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<IdentityConflictHandler>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IGxpContextAccessor, HttpGxpContextAccessor>();
 builder.Services.AddScoped<GxpSessionInterceptor>();
@@ -22,9 +24,12 @@ builder.Services.AddAuthorizationBuilder()
     .AddPermissionPolicy(Permissions.UomRead)
     .AddPermissionPolicy(Permissions.UomWrite)
     .AddPermissionPolicy(Permissions.AuditTrailRead)
-    .AddPermissionPolicy(Permissions.EsigSign);
+    .AddPermissionPolicy(Permissions.EsigSign)
+    .AddPermissionPolicy(Permissions.DeviationRead)
+    .AddPermissionPolicy(Permissions.DeviationWrite);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ISignableSource, UomSignable>();
+builder.Services.AddSingleton<ISignableSource, DeviationSignable>();
 builder.Services.AddSingleton<SignableRegistry>();
 
 // Connection strings are resolved lazily so test hosts and environments can override them.
@@ -53,6 +58,7 @@ app.MapBffEndpoints();
 app.MapUomEndpoints();
 app.MapAuditEndpoints();
 app.MapEsigEndpoints();
+app.MapDeviationEndpoints();
 
 app.Run();
 

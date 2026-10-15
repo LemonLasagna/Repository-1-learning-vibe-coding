@@ -16,12 +16,32 @@ public static class Permissions
     /// </summary>
     public const string EsigSign = "esig.sign";
 
+    public const string DeviationRead = "qms.deviation:read";
+    /// <summary>Raise deviations and work on them as owner (draft, investigation).</summary>
+    public const string DeviationWrite = "qms.deviation:write";
+    /// <summary>QA: triage, classify and set the due date, cancel after submission.</summary>
+    public const string DeviationTriage = "qms.deviation:triage";
+    /// <summary>QA: approve and close, or return to investigation.</summary>
+    public const string DeviationApprove = "qms.deviation:approve";
+
     /// <summary>
     /// One policy per permission, satisfied by a "perm" claim. In production the identity-access service
     /// resolves role assignments (scoped to org nodes) into these claims; Keycloak roles are not used directly.
     /// </summary>
     public static AuthorizationBuilder AddPermissionPolicy(this AuthorizationBuilder builder, string permission) =>
         builder.AddPolicy(permission, p => p.RequireAuthenticatedUser().RequireClaim(ClaimType, permission));
+}
+
+/// <summary>Identity details from the session or token claims.</summary>
+public static class UserClaims
+{
+    public static IReadOnlySet<string> PermissionsOf(this System.Security.Claims.ClaimsPrincipal user) =>
+        user.FindAll(Permissions.ClaimType).Select(c => c.Value).ToHashSet(StringComparer.Ordinal);
+
+    public static string Login(this System.Security.Claims.ClaimsPrincipal user) =>
+        user.FindFirst("preferred_username")?.Value ?? user.FindFirst("sub")!.Value;
+
+    public static string DisplayName(this System.Security.Claims.ClaimsPrincipal user) => user.FindFirst("name")?.Value ?? user.Login();
 }
 
 /// <summary>Builds the GxP context from the validated token and request headers.</summary>
