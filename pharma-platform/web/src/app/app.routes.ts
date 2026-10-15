@@ -13,9 +13,19 @@ export const routes: Routes = [
     loadComponent: () => import('./features/uom/uom-pages').then((m) => m.UomDetailPage),
   },
   {
-    path: 'demo/deviation',
-    title: 'Deviation (metadata demo) · PharmaOS',
-    loadComponent: () => import('./features/deviation/deviation-demo').then((m) => m.DeviationDemoPage),
+    path: 'deviations',
+    title: 'Deviations · PharmaOS',
+    loadComponent: () => import('./features/deviation/deviation-pages').then((m) => m.DeviationListPage),
+  },
+  {
+    path: 'deviations/new',
+    title: 'New deviation · PharmaOS',
+    loadComponent: () => import('./features/deviation/deviation-pages').then((m) => m.DeviationCreatePage),
+  },
+  {
+    path: 'deviations/:id',
+    title: 'Deviation · PharmaOS',
+    loadComponent: () => import('./features/deviation/deviation-pages').then((m) => m.DeviationDetailPage),
   },
   { path: '**', redirectTo: 'uoms' },
 ];

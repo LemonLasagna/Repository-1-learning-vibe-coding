@@ -43,8 +43,11 @@ public sealed class PostgresFixture : IAsyncLifetime
         await using (var conn = new NpgsqlConnection(dbAdmin.ConnectionString))
         {
             await conn.OpenAsync();
-            foreach (var file in Directory.GetFiles(FindSchemaDirectory(), "0*.sql").Order(StringComparer.Ordinal))
+            var schemaDir = FindSchemaDirectory();
+            foreach (var file in Directory.GetFiles(schemaDir, "0*.sql").Order(StringComparer.Ordinal))
                 await Exec(conn, await File.ReadAllTextAsync(file));
+            // The same demo organisation the installer loads with --demo-data (sites for the dev tenant).
+            await Exec(conn, await File.ReadAllTextAsync(Path.Combine(schemaDir, "..", "seed", "demo-org.sql")));
 
             // Roles are cluster-wide: create once, reset passwords every run.
             await Exec(conn, $"""

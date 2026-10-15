@@ -5,25 +5,9 @@
 const { chromium } = require('playwright-core');
 const assert = require('node:assert/strict');
 
-const BASE = process.env.E2E_BASE ?? 'http://localhost:4200';
-const PASSWORD = process.env.E2E_PASSWORD ?? 'Dev-Only-Pass-2026';
+const { BASE, PASSWORD, signIn, step } = require('./helpers.cjs');
 const code = `E2E${Date.now().toString(36).toUpperCase()}`.slice(0, 12);
 let recordPath = '';
-
-async function signIn(page, login) {
-  await page.goto(`${BASE}/uoms`);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.waitForURL(/\/realms\/pharmaos\//);
-  await page.fill('#username', login);
-  await page.fill('#password', PASSWORD);
-  await page.click('#kc-login');
-  await page.waitForURL(`${BASE}/uoms`);
-}
-
-async function step(name, fn) {
-  await fn();
-  console.log(`  ✓ ${name}`);
-}
 
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
@@ -57,7 +41,7 @@ async function step(name, fn) {
       const u = await page.evaluate(() => fetch('/bff/user').then((r) => r.json()));
       assert.equal(u.login, 'qa.analyst');
       assert.equal(u.tenantId, '0000000a-0000-0000-0000-000000000000');
-      assert.deepEqual(u.permissions, ['audit.trail:read', 'esig.sign', 'mdm.uom:read', 'mdm.uom:write']);
+      assert.deepEqual(u.permissions, ['audit.trail:read', 'esig.sign', 'mdm.uom:read', 'mdm.uom:write', 'qms.deviation:read', 'qms.deviation:write']);
       assert.ok(u.authTime, 'auth_time missing');
       assert.match(u.logoutUrl, /^\/bff\/logout\?sid=/);
     });
@@ -93,7 +77,7 @@ async function step(name, fn) {
       await page.getByRole('button', { name: 'Sign as Approved…' }).click();
       const dialog = page.getByRole('dialog', { name: 'Electronic signature' });
       await dialog.getByText(`${code} (version 2)`).waitFor();
-      await dialog.locator('.ack input').check();
+      if (await dialog.locator('.ack input').count()) await dialog.locator('.ack input').check();
       await dialog.getByRole('button', { name: 'Continue to sign' }).click();
       await page.getByText('Another person must sign.').waitFor();
       assert.equal(new URL(page.url()).origin, new URL(BASE).origin, 'should not have left for Keycloak');
@@ -150,7 +134,7 @@ async function step(name, fn) {
       await dialog.getByText('Avery Approver (qa.approver)').waitFor();
       assert.equal(await dialog.locator('input[type="password"]').count(), 0, 'the app must not ask for the password');
       await dialog.locator('#esig-reason').fill('E2E: approved for use');
-      await dialog.locator('.ack input').check();
+      if (await dialog.locator('.ack input').count()) await dialog.locator('.ack input').check();
       await dialog.getByRole('button', { name: 'Continue to sign' }).click();
       await ap.waitForURL(/\/realms\/pharmaos\//);
       await ap.locator('#password').waitFor(); // live SSO session, yet the password is required

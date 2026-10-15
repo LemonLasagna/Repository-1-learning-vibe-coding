@@ -10,7 +10,7 @@ using PharmaOS.Platform.Host.Security;
 namespace PharmaOS.Platform.Host.ESignature;
 
 public sealed record CreateChallengeRequest(
-    string? Entity, Guid RecordId, int? RecordVersion, string? Meaning, string? Reason, bool Acknowledge);
+    string? Entity, Guid RecordId, int? RecordVersion, string? Meaning, string? Reason, bool Acknowledge, string? Action = null);
 
 public sealed record ChallengeResponse(Guid ChallengeId, DateTimeOffset ExpiresAt, int RecordVersion, string RecordHash);
 
@@ -99,9 +99,18 @@ public static class EsigEndpoints
             return Problem(StatusCodes.Status400BadRequest, "ACKNOWLEDGEMENT_REQUIRED", "Acknowledgement required",
                 EsigCatalog.SignatureStatement);
 
+        var action = string.IsNullOrWhiteSpace(body.Action) ? null : body.Action.Trim();
+        if (action is null && source.SignaturesRequireAction)
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+                { ["action"] = [$"Signatures on {source.EntityCode} are given with a workflow action."] });
+        if (action is not null
+            && await source.CheckActionAsync(store.Connection, store.Transaction,
+                new SignedAction(ctx, PermissionsOf(user), record.Id, action, meaning, reason, time.GetUtcNow()), ct) is { } refusal)
+            return Problem(refusal.Status, refusal.Code, refusal.Title, refusal.Detail);
+
         // Segregation of duties is checked now, so nobody types a password for a signature that would be refused.
         var edId = await store.EntityDefinitionIdAsync(source.EntityCode, ct);
-        var prior = edId is { } ed ? await store.SignaturesOnVersionAsync(ed, record.Id, record.Version, ct) : [];
+        var prior = edId is { } ed ? await store.SignaturesOnRecordAsync(ed, record.Id, ct) : [];
         var preview = Evidence(Guid.Empty, ctx, source, meaning, record.Id, record.Version, record.Hash, time.GetUtcNow(), reason);
         if (SignatureBinding.Verify(preview, ctx.UserId, record.Id, record.Version, record.Hash, meaning.Policy, record.LastEditor, prior)
             == BindingResult.SegregationOfDuties)
@@ -112,7 +121,7 @@ public static class EsigEndpoints
         var issued = Microseconds(time.GetUtcNow());
         var expires = issued.AddSeconds(config.GetValue("ESig:ChallengeTtlSeconds", 120));
         await store.InsertChallengeAsync(ctx, id, issued, expires,
-            new ChallengeIntent(source.EntityCode, record.Id, record.Version, record.Hash, meaning.Code, reason, body.Acknowledge), ct);
+            new ChallengeIntent(source.EntityCode, record.Id, record.Version, record.Hash, meaning.Code, reason, body.Acknowledge, action), ct);
         await tx.CommitAsync(ct);
         return Results.Created($"{Base}/challenges/{id}", new ChallengeResponse(id, expires, record.Version, record.Hash));
     }
@@ -154,7 +163,7 @@ public static class EsigEndpoints
         if (record is null) return Results.NotFound();
 
         var edId = await store.EnsureEntityDefinitionAsync(ctx, source, ct);
-        var prior = await store.SignaturesOnVersionAsync(edId, record.Id, intent.RecordVersion, ct);
+        var prior = await store.SignaturesOnRecordAsync(edId, record.Id, ct);
         var evidence = Evidence(Guid.CreateVersion7(), ctx, source, meaning, intent.RecordId, intent.RecordVersion, intent.RecordHash, now, intent.Reason);
         switch (SignatureBinding.Verify(evidence, ctx.UserId, record.Id, record.Version, record.Hash, meaning.Policy, record.LastEditor, prior))
         {
@@ -180,10 +189,16 @@ public static class EsigEndpoints
                 signerLogin = login,
                 meaningStatement = meaning.Statement,
                 challengeId = id,
+                action = intent.Action,
                 authTime = AuthenticationRecency.AuthTime(user),
                 sessionId = user.FindFirst("sid")?.Value,
             },
             manifest, intent.Acknowledge, ct);
+        // The workflow action the signature authorises happens in the same transaction, or not at all.
+        if (intent.Action is { } signedAction
+            && await source.ApplyActionAsync(store.Connection, store.Transaction,
+                new SignedAction(ctx, PermissionsOf(user), record.Id, signedAction, meaning, intent.Reason, now), evidence.SignatureId, ct) is { } refused)
+            return await FailAsync(db, tx, ctx, now, id, record.Id, refused.Code, refused.Status, refused.Title, refused.Detail, consume: true, log, ct);
         await store.ConsumeChallengeAsync(id, now, ct);
         await tx.CommitAsync(ct);
 
@@ -209,7 +224,8 @@ public static class EsigEndpoints
             currentVersion = record.Version,
             items = signatures.Select(s => new SignatureResponse(s.Id, s.SignerName, s.SignerLogin, s.Meaning, s.MeaningLabel,
                 s.SignedAt, s.RecordVersion, s.RecordHash, s.Reason, s.Manifest,
-                s.RecordVersion == record.Version && string.Equals(s.RecordHash, record.Hash, StringComparison.OrdinalIgnoreCase))),
+                // The record hash covers the signed content; it is unchanged when only the workflow state moved on.
+                string.Equals(s.RecordHash, record.Hash, StringComparison.OrdinalIgnoreCase))),
         });
     }
 
@@ -245,14 +261,16 @@ public static class EsigEndpoints
     private static EsigStore Store(PlatformDbContext db) =>
         new((NpgsqlConnection)db.Database.GetDbConnection(), (NpgsqlTransaction)db.Database.CurrentTransaction!.GetDbTransaction());
 
-    private static string Login(ClaimsPrincipal user) =>
-        user.FindFirst("preferred_username")?.Value ?? user.FindFirst("sub")!.Value;
+    private static IReadOnlySet<string> PermissionsOf(ClaimsPrincipal user) => user.PermissionsOf();
 
-    private static string SignerName(ClaimsPrincipal user) => user.FindFirst("name")?.Value ?? Login(user);
+    private static string Login(ClaimsPrincipal user) => user.Login();
+
+    private static string SignerName(ClaimsPrincipal user) => user.DisplayName();
 
     private static string SodDetail(MeaningDefinition meaning) =>
-        $"You cannot sign '{meaning.Label}' for a version you last changed or already signed as "
-        + $"{string.Join(" or ", meaning.ConflictingMeanings.Select(c => EsigCatalog.FindMeaning(c)?.Label ?? c))}. Another person must sign.";
+        $"You cannot sign '{meaning.Label}' for a version you last changed, or for a record you already signed as "
+        + $"{string.Join(" or ", meaning.ConflictingMeanings.Order(StringComparer.Ordinal).Select(c => EsigCatalog.FindMeaning(c)?.Label ?? c))}. "
+        + "Another person must sign.";
 
     private static IResult SegregationOfDuties(MeaningDefinition meaning) =>
         Problem(StatusCodes.Status403Forbidden, "SEGREGATION_OF_DUTIES", "Segregation of duties", SodDetail(meaning));

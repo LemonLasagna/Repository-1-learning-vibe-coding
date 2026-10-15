@@ -36,6 +36,7 @@ RECREATE=false
 DO_BACKEND=true
 DO_WEB=true
 DO_SMOKE=true
+DEMO_DATA=false
 ENV_FILE="$ROOT/pharmaos.env"
 REPORT_DIR="$ROOT/install-reports"
 
@@ -76,6 +77,7 @@ Usage: ./install.sh [options]
   --skip-backend          Do not build or test the .NET backend
   --skip-web              Do not install, test or build the Angular frontend
   --skip-smoke            Do not start the backend for the health check
+  --demo-data             Load the demo organisation (development and tests only; never in TEST/VAL/PROD)
   -h, --help              Show this help
 
 The superuser password is read from PGPASSWORD, or asked for (hidden) in interactive mode.
@@ -94,6 +96,7 @@ while [[ $# -gt 0 ]]; do
     --skip-backend) DO_BACKEND=false; DO_SMOKE=false ;;
     --skip-web) DO_WEB=false ;;
     --skip-smoke) DO_SMOKE=false ;;
+    --demo-data) DEMO_DATA=true ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'Unknown option: %s\n\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
@@ -224,11 +227,16 @@ if [[ "$DB_EXISTS" == "1" ]]; then
   fi
 fi
 
+if $INTERACTIVE && ! $DEMO_DATA; then
+  yes_no "Load the demo organisation (sites for the development users; development only)?" y && DEMO_DATA=true
+fi
+
 if $INTERACTIVE; then
   printf '\n  %sSummary%s\n' "$B" "$N"
   printf '    database      %s on %s:%s %s\n' "$DB_NAME" "$PG_HOST" "$PG_PORT" "$( [[ "$DB_EXISTS" == 1 ]] && echo '(will be DROPPED and recreated)' || echo '(new)')"
   printf '    backend       %s\n' "$( $DO_BACKEND && echo 'build + unit and integration tests' || echo skipped)"
   printf '    frontend      %s\n' "$( $DO_WEB && echo 'npm ci + tests + production build' || echo skipped)"
+  printf '    demo data     %s\n' "$( $DEMO_DATA && echo 'demo organisation (database/seed/demo-org.sql)' || echo none)"
   printf '    health check  %s\n' "$( $DO_SMOKE && echo 'start backend once' || echo skipped)"
   yes_no "Continue?" y || die "Cancelled by user."
 fi
@@ -307,6 +315,13 @@ if [[ "$TZ_SETTING" == "UTC" || "$TZ_SETTING" == "Etc/UTC" ]]; then
 else
   record "IQ-INF-007" "Database time zone" "UTC" "$TZ_SETTING" "WARN"
   warn "Database time zone is $TZ_SETTING. Timestamps are stored in UTC regardless; set timezone = 'UTC' in postgresql.conf for production."
+fi
+
+if $DEMO_DATA; then
+  psql_su -d "$DB_NAME" -q -f database/seed/demo-org.sql >/dev/null
+  SITES="$(q "SELECT string_agg(code, ',' ORDER BY code) FROM org.site")"
+  record "DEMO-001" "Demo organisation loaded (development only)" "BER,HAM" "$SITES" "$( [[ "$SITES" == BER,HAM ]] && echo PASS || echo FAIL)"
+  [[ "$SITES" == BER,HAM ]] && ok "demo organisation loaded (sites $SITES); development only" || die "Demo organisation did not load."
 fi
 
 # ---------------------------------------------------------- 6. logins ---

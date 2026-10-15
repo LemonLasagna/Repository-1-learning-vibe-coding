@@ -1,4 +1,4 @@
-import bundleJson from '../../../../public/metadata/deviation.bundle.json';
+import bundleJson from './testing/deviation-investigation.bundle.json';
 import { computeFormStates, RuntimeBundle, validateBundle } from './runtime-bundle';
 
 const bundle = bundleJson as unknown as RuntimeBundle;

@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import bundleJson from '../../../../public/metadata/deviation.bundle.json';
+import bundleJson from './testing/deviation-investigation.bundle.json';
 import { MetadataForm } from './metadata-form';
 import { RuntimeBundle } from './runtime-bundle';
 
