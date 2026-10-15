@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "pharmaos",
+      "credentials": [{"accessKey": "REPLACE_FROM_ENV", "secretKey": "REPLACE_FROM_ENV"}],
+      "actions": ["Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

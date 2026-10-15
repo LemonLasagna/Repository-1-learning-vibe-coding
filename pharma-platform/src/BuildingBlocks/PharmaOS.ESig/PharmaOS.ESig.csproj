@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\PharmaOS.Gxp\PharmaOS.Gxp.csproj" />
+  </ItemGroup>
+</Project>

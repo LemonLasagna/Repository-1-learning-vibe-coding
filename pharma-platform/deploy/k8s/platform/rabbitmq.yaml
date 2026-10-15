@@ -1,0 +1,19 @@
+apiVersion: rabbitmq.com/v1beta1
+kind: RabbitmqCluster
+metadata: {name: pharmaos-mq, namespace: pharmaos-data}
+spec:
+  replicas: 3
+  resources:
+    requests: {cpu: "2", memory: 8Gi}
+    limits: {cpu: "4", memory: 8Gi}
+  persistence: {storageClassName: longhorn-encrypted, storage: 200Gi}
+  tls: {secretName: pharmaos-mq-tls, disableNonTLSListeners: true}
+  rabbitmq:
+    additionalConfig: |
+      default_queue_type = quorum
+      vm_memory_high_watermark.relative = 0.6
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector: {matchLabels: {app.kubernetes.io/name: pharmaos-mq}}
+          topologyKey: kubernetes.io/hostname

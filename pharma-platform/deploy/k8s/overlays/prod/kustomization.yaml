@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Promotion = PR copying the digests verified in VAL; requires customer change-control reference.
+resources:
+  - ../../base
+  - ../../platform
+  - ../../services/quality
+images:
+  - name: harbor.pharmaos.internal/pharmaos/quality-service
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+commonLabels:
+  pharmaos.io/environment: prod
+patches:
+  - target: {kind: HorizontalPodAutoscaler, name: quality-service}
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 4

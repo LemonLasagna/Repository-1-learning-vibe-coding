@@ -1,0 +1,71 @@
+<form [formGroup]="form()" class="pos-form" novalidate>
+  @for (section of bundle().sections; track section.code) {
+    @if (states().sectionsVisible[section.code]) {
+      <fieldset class="pos-section" [attr.data-section]="section.code">
+        <legend>{{ section.title }}</legend>
+        <div class="pos-grid">
+          @for (code of section.fields; track code) {
+            @let f = field(code);
+            @let s = states().fields[code];
+            @if (!s.hidden) {
+              <div class="pos-field" [class.wide]="f.type === 'longtext'" [attr.data-field]="code">
+                @if (f.type === 'boolean') {
+                  <label class="pos-check">
+                    <input type="checkbox" [formControlName]="code" />
+                    {{ f.label }}@if (s.required) {<span class="req" aria-hidden="true"> *</span>}
+                  </label>
+                } @else {
+                  <label [for]="'f-' + code">
+                    {{ f.label }}@if (s.required) {<span class="req" aria-hidden="true"> *</span>}
+                    @if (s.readonly) {<span class="ro">read-only in this state</span>}
+                  </label>
+                  @switch (f.type) {
+                    @case ('longtext') {
+                      <textarea [id]="'f-' + code" [formControlName]="code" rows="4"
+                        [attr.aria-required]="s.required" [attr.maxlength]="f.maxLength ?? null"></textarea>
+                    }
+                    @case ('number') {
+                      <div class="pos-unit">
+                        <input [id]="'f-' + code" type="number" [formControlName]="code" [attr.aria-required]="s.required" />
+                        @if (f.unit) {<span>{{ f.unit }}</span>}
+                      </div>
+                    }
+                    @case ('date') {
+                      <input [id]="'f-' + code" type="date" [formControlName]="code" [attr.aria-required]="s.required" />
+                    }
+                    @case ('datetime') {
+                      <input [id]="'f-' + code" type="datetime-local" [formControlName]="code" [attr.aria-required]="s.required" />
+                    }
+                    @case ('lookup') {
+                      <select [id]="'f-' + code" [formControlName]="code" [attr.aria-required]="s.required">
+                        <option [ngValue]="null">Select…</option>
+                        @for (o of f.options ?? []; track o.code) {
+                          <option [ngValue]="o.code">{{ o.label }}</option>
+                        }
+                      </select>
+                    }
+                    @default {
+                      <input [id]="'f-' + code" type="text" [formControlName]="code"
+                        [attr.aria-required]="s.required" [attr.maxlength]="f.maxLength ?? null" />
+                    }
+                  }
+                }
+                @if (f.help) {<small class="help">{{ f.help }}</small>}
+                @if (showError(code)) {
+                  <small class="error" role="alert">
+                    @if (control(code).hasError('maxlength')) {Maximum {{ f.maxLength }} characters.} @else {Required.}
+                  </small>
+                }
+              </div>
+            }
+          }
+        </div>
+      </fieldset>
+    }
+  }
+  @if (states().ruleErrors.length) {
+    <p class="pos-rule-errors" role="status">
+      Some form rules could not be evaluated and were ignored. The server will still validate this record.
+    </p>
+  }
+</form>

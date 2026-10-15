@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: quality-service, namespace: pharmaos-services}
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quality-service
+  namespace: pharmaos-services
+  labels: {app.kubernetes.io/name: quality-service, pharmaos.io/kind: domain-service}
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: {app.kubernetes.io/name: quality-service}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: quality-service, pharmaos.io/kind: domain-service}
+    spec:
+      serviceAccountName: quality-service
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: {matchLabels: {app.kubernetes.io/name: quality-service}}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: app
+          image: harbor.pharmaos.internal/pharmaos/quality-service:REPLACED_BY_OVERLAY   # digest-pinned in overlays
+          ports: [{name: http, containerPort: 8080}]
+          env:
+            - {name: ASPNETCORE_URLS, value: "http://+:8080"}
+            - {name: DOTNET_gcServer, value: "1"}
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector.pharmaos-platform:4317"}
+            - {name: ConnectionStrings__Db, valueFrom: {secretKeyRef: {name: quality-db, key: connection}}}
+            - {name: RabbitMq__Uri, valueFrom: {secretKeyRef: {name: quality-mq, key: uri}}}
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {memory: 1Gi}
+          readinessProbe: {httpGet: {path: /health/ready, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health/live, port: http}, periodSeconds: 10, failureThreshold: 6}
+          startupProbe: {httpGet: {path: /health/live, port: http}, failureThreshold: 30, periodSeconds: 2}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: quality-service, namespace: pharmaos-services}
+spec:
+  selector: {app.kubernetes.io/name: quality-service}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: quality-service, namespace: pharmaos-services}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: quality-service}
+  minReplicas: 3
+  maxReplicas: 12
+  metrics:
+    - type: Resource
+      resource: {name: cpu, target: {type: Utilization, averageUtilization: 65}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: quality-service, namespace: pharmaos-services}
+spec:
+  minAvailable: 2
+  selector: {matchLabels: {app.kubernetes.io/name: quality-service}}
+---
+# Secrets come from the self-hosted OpenBao via External Secrets Operator.
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata: {name: quality-db, namespace: pharmaos-services}
+spec:
+  refreshInterval: 1h
+  secretStoreRef: {kind: ClusterSecretStore, name: pharmaos-openbao}
+  target: {name: quality-db}
+  data:
+    - secretKey: connection
+      remoteRef: {key: pharmaos/prod/quality-service, property: db_connection}

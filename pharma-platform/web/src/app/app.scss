@@ -1,0 +1,62 @@
+.shell-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+  padding: 10px 16px;
+  background: var(--pos-surface);
+  border-bottom: 1px solid var(--pos-border);
+}
+
+.brand {
+  font-weight: 700;
+  color: var(--pos-text);
+  text-decoration: none;
+}
+
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  flex: 1;
+
+  a {
+    color: var(--pos-muted);
+    text-decoration: none;
+    padding: 4px 0;
+    border-bottom: 2px solid transparent;
+
+    &.active {
+      color: var(--pos-text);
+      border-bottom-color: var(--pos-accent);
+    }
+  }
+}
+
+.env {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--pos-env-dev);
+  color: #fff;
+
+  &[data-env='VAL'] {
+    background: var(--pos-env-val);
+  }
+
+  &[data-env='PROD'] {
+    background: var(--pos-env-prod);
+  }
+}
+
+.signin {
+  margin: 12px 16px 0;
+}
+
+main {
+  padding: 16px;
+  max-width: 1100px;
+  margin: 0 auto;
+}

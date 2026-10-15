@@ -1,0 +1,71 @@
+.pos-section {
+  border: 1px solid var(--pos-border);
+  border-radius: 6px;
+  padding: 12px 16px 16px;
+  margin: 0 0 16px;
+
+  legend {
+    font-weight: 600;
+    padding: 0 6px;
+  }
+}
+
+.pos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px 16px;
+}
+
+.pos-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  &.wide {
+    grid-column: 1 / -1;
+  }
+
+  label {
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .req {
+    color: var(--pos-danger);
+  }
+
+  .ro {
+    margin-left: 8px;
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--pos-muted);
+  }
+
+  .help {
+    color: var(--pos-muted);
+  }
+
+  .error {
+    color: var(--pos-danger);
+  }
+}
+
+.pos-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pos-unit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  input {
+    flex: 1;
+  }
+}
+
+.pos-rule-errors {
+  color: var(--pos-warning);
+}
