@@ -137,7 +137,7 @@ announcement | title:s!, body:t!, audience:j, publish_from:ts!, publish_to:ts
 record_subscription N | user_id:>iam.app_user!, entity_definition_id:>meta.entity_definition!, record_id:u!
 digest_batch N | recipient_id:>iam.app_user!, period_start:ts!, period_end:ts!, sent_at:ts
 
-@schema file | Object storage index (MinIO) & retention
+@schema file | Object storage index (S3-compatible, self-hosted) & retention
 storage_bucket | code:c!*, minio_bucket:s!, retention_class:st!, worm_enabled:bool!
 stored_object | bucket_id:>file.storage_bucket!, object_key:l!, file_name:s!, mime_type:s!, size_bytes:b!, sha256:h!, uploaded_by:>iam.app_user!, virus_scan_status:st!, retention_until:d, legal_hold:bool!
 attachment | stored_object_id:>file.stored_object!, entity_definition_id:>meta.entity_definition!, record_id:u!, category:c, description:l
@@ -498,7 +498,7 @@ report_definition V W | code:c!*, name:s!, report_type:st!, engine:st!, template
 report_schedule | report_definition_id:>rpt.report_definition!, cron:c!, recipients:j!, format:st!, is_active:bool!
 report_execution | report_definition_id:>rpt.report_definition!, report_version:c!, parameters:j, executed_by:>iam.app_user, executed_at:ts!, output_object_id:>file.stored_object, output_hash:h, row_count:i
 kpi_snapshot N | metric_code:c!, org_node_id:>org.org_node, period:d!, value:n!
-powerbi_binding | workspace_id:c!, external_report_id:c!, report_definition_id:>rpt.report_definition, rls_role:c
+bi_dashboard_binding | engine:st!, external_dashboard_id:c!, report_definition_id:>rpt.report_definition, dataset_ref:s, row_filter_role:c
 user_dashboard_preference N | user_id:>iam.app_user!, dashboard_id:>rpt.dashboard_definition!, overrides:j
 saved_search N | user_id:>iam.app_user!, name:s!, entity_definition_id:>meta.entity_definition, query:j!, is_shared:bool!
 

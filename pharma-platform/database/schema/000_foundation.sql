@@ -27,7 +27,7 @@ COMMENT ON SCHEMA esig IS 'Electronic signatures (21 CFR Part 11 / Annex 11)';
 CREATE SCHEMA IF NOT EXISTS notif;
 COMMENT ON SCHEMA notif IS 'Notification builder & delivery';
 CREATE SCHEMA IF NOT EXISTS file;
-COMMENT ON SCHEMA file IS 'Object storage index (MinIO) & retention';
+COMMENT ON SCHEMA file IS 'Object storage index (S3-compatible, self-hosted) & retention';
 CREATE SCHEMA IF NOT EXISTS dms;
 COMMENT ON SCHEMA dms IS 'Document management';
 CREATE SCHEMA IF NOT EXISTS qms;

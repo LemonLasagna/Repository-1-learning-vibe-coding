@@ -6,7 +6,7 @@ spec:
   resources:
     requests: {cpu: "2", memory: 8Gi}
     limits: {cpu: "4", memory: 8Gi}
-  persistence: {storageClassName: encrypted-ssd, storage: 200Gi}
+  persistence: {storageClassName: longhorn-encrypted, storage: 200Gi}
   tls: {secretName: pharmaos-mq-tls, disableNonTLSListeners: true}
   rabbitmq:
     additionalConfig: |
@@ -16,4 +16,4 @@ spec:
     podAntiAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
         - labelSelector: {matchLabels: {app.kubernetes.io/name: pharmaos-mq}}
-          topologyKey: topology.kubernetes.io/zone
+          topologyKey: kubernetes.io/hostname

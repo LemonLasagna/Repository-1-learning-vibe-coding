@@ -36,7 +36,7 @@ service follows).
 
 | Scope | Default limit | Algorithm |
 |---|---|---|
-| Per user (interactive) | 20 req/s, burst 60 | Token bucket in Redis |
+| Per user (interactive) | 20 req/s, burst 60 | Token bucket in Valkey |
 | Per API client | Configurable per contract (default 50 req/s) | Token bucket |
 | Per tenant | Fair-share ceiling (protects shared clusters) | Sliding window |
 | Signature attempts | 5/min per user | Fixed window + lockout policy |

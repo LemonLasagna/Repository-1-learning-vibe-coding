@@ -1,5 +1,6 @@
 # 19. Kubernetes Deployment
 
+Target: customer-owned RKE2 clusters (tier M/L, doc 03 §3.3). Tier S uses `deploy/compose/` instead.
 Manifests: `deploy/k8s/` (Kustomize). They parse as valid YAML. They were **not** rendered with `kustomize build`
 or applied to a cluster in this session, because no cluster or kubectl was available.
 
@@ -18,10 +19,12 @@ deploy/k8s/
 | Ingress controller (NGINX or Envoy Gateway) + cert-manager | TLS termination, certificates |
 | CloudNativePG operator | PostgreSQL HA, backups, PITR, replica clusters for DR |
 | RabbitMQ Cluster Operator | Quorum-queue clusters |
-| ECK or OpenSearch operator | Search |
-| MinIO operator (or managed S3) | Object storage with object lock |
+| OpenSearch operator | Search |
+| Rook-Ceph (RGW) or an external Ceph cluster | S3 object storage with Object Lock |
+| MetalLB, Longhorn | Bare-metal load balancing and persistent volumes |
+| Harbor | Local registry; air-gapped image source |
 | Keycloak operator | IdP |
-| External Secrets Operator | Secrets from Vault / cloud SM |
+| External Secrets Operator | Secrets from OpenBao |
 | Argo CD | GitOps delivery |
 | KEDA | Queue-driven autoscaling for workers |
 | OpenTelemetry collector, Prometheus, Loki, Tempo | Observability |

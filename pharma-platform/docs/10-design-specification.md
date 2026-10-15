@@ -19,7 +19,7 @@ meta.config_package ─< config_package_item (artifact_type, artifact_id, artifa
 
 **Runtime resolution.** `GET /api/v1/meta/entities/{code}/runtime?state={s}` returns a compiled bundle. The
 bundle contains a JSON Schema for `ext` and core fields, the UI schema (layout), rule ASTs, per-state access,
-list views, and the available transitions. Bundles are cached in Redis under the key
+list views, and the available transitions. Bundles are cached in Valkey under the key
 `meta:{tenant}:{entity}:{bundleHash}` and invalidated by a `ConfigDeployed` event. The client caches by ETag.
 
 ## 10.2 Rule language (JSON AST)
@@ -89,7 +89,7 @@ artefacts (DRAFT) ─┐
 ```
 
 - The manifest lists artefact type, code, version, dependencies, and the target platform version range.
-- The package is self-contained JSON, signed with the tenant's KMS key. The import verifies the signature and
+- The package is self-contained JSON, signed with the tenant's OpenBao transit key. The import verifies the signature and
   the hash.
 - The deployment validates referential integrity, runs rule-AST validation and workflow model validation, and
   dry-runs migrations of in-flight records (for example a newly required field). It then commits atomically.

@@ -30,7 +30,7 @@ apply to PostgreSQL 16 or the integrity tests fail.
 
 | Requested | Implementation |
 |---|---|
-| **Audit tables** | `audit.audit_trail` (field-level old/new, actor, on-behalf-of, reason, correlation, tx id, SHA-256 row hash), `audit.audit_seal` (hash-chained range seals, optional KMS signature), `audit.audit_trail_review` (periodic review evidence) |
+| **Audit tables** | `audit.audit_trail` (field-level old/new, actor, on-behalf-of, reason, correlation, tx id, SHA-256 row hash), `audit.audit_seal` (hash-chained range seals, optional OpenBao transit signature), `audit.audit_trail_review` (periodic review evidence) |
 | **Version tables** | 37 `<entity>_version` tables (immutable JSON snapshot, snapshot hash, effective window, change-control link, approval signature) plus domain-specific `dms.document_version` |
 | **Workflow tables** | `wf.*` (22): definitions, nodes, transitions, approval routes, instances, tokens, tasks, candidates, delegation, escalation, timers, SLA, history |
 | **Metadata tables** | `meta.*` (28): entity, field, form, section, placement, state overrides, rules, decision tables, lookups, numbering, menus, list views, templates, audit policies, config packages |
@@ -64,7 +64,7 @@ created_at, created_by, updated_at, updated_by
 
 Tamper evidence below the application layer (for example a DBA disabling triggers) is detected by
 `audit.verify_seals()` (OQ-DI-009). The sealer job runs every 5 minutes and seals the latest range. Each seal
-chains the previous seal hash and can be signed with a KMS asymmetric key (`kms_signature`).
+chains the previous seal hash and can be signed with an OpenBao transit key (stored in the `kms_signature` column).
 
 ## 5.5 Session context contract
 

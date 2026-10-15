@@ -16,6 +16,8 @@
 | URS-GEN-002 | The system shall support multiple languages for UI and configurable content | H | N | L |
 | URS-GEN-003 | The system shall display date/time in the site time zone with the UTC offset, using a server-controlled time source | M | Y | H |
 | URS-GEN-004 | The system shall support the six segments (pharma, biopharma, vaccine, device, cosmetics, nutraceutical) through configuration, without code branches | H | N | M |
+| URS-GEN-006 | All data (database, documents, backups, keys) shall be stored on customer-controlled infrastructure; the system shall operate without internet access | M | Y | H |
+| URS-GEN-007 | All runtime components shall be available under OSI-approved open-source licences | H | N | L |
 | URS-GEN-005 | The system shall meet availability ≥ 99.9% monthly for production | H | Y | M |
 
 ## 8.2 Configuration (CFG)
@@ -46,7 +48,7 @@
 
 | ID | Requirement | Pri | GxP | Risk |
 |---|---|---|---|---|
-| URS-SEC-001 | Authenticate via SSO (OIDC/SAML) federated to corporate IdP (AD/Entra ID, LDAP) | M | Y | H |
+| URS-SEC-001 | Authenticate via SSO (OIDC/SAML) federated to the corporate directory (on-prem Active Directory / LDAP; cloud IdPs optional) | M | Y | H |
 | URS-SEC-002 | Enforce MFA for privileged users and configurable for all users | M | Y | H |
 | URS-SEC-003 | Role-based access with site and org-node scope | M | Y | H |
 | URS-SEC-004 | Attribute-based policies (site, department, confidentiality, record owner, record state) | M | Y | H |
@@ -54,7 +56,7 @@
 | URS-SEC-006 | Time-bound role assignments and periodic access review campaigns | M | Y | M |
 | URS-SEC-007 | Session inactivity timeout (configurable) and concurrent session control | M | Y | M |
 | URS-SEC-008 | Account lockout after configurable failed attempts with security alerting | M | Y | H |
-| URS-SEC-009 | Encryption in transit (TLS 1.2+, prefer 1.3) and at rest (AES-256), keys in KMS/HSM | M | Y | H |
+| URS-SEC-009 | Encryption in transit (TLS 1.2+, prefer 1.3) and at rest (AES-256), keys in a self-hosted key manager (optionally HSM-backed) | M | Y | H |
 | URS-SEC-010 | Electronic signatures shall show signer's printed name, date/time, and meaning on the record and in human-readable output | M | Y | H |
 | URS-SEC-011 | Electronic signatures shall be linked to their record so they cannot be excised, copied, or transferred | M | Y | H |
 | URS-SEC-012 | Signature policy per action: meaning, re-authentication components, reason required, second-person requirement | M | Y | H |

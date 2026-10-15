@@ -1,4 +1,5 @@
-# CloudNativePG cluster: 1 primary + 2 replicas across AZs, synchronous quorum, WAL archiving (PITR).
+# CloudNativePG cluster on customer-owned nodes: 1 primary + 2 replicas on separate hosts/racks,
+# synchronous standby (RPO 0 inside the DC), WAL archiving (PITR) to the local Ceph RGW.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata: {name: pharmaos-pg, namespace: pharmaos-data}
@@ -17,15 +18,17 @@ spec:
       wal_compression: "on"
   bootstrap:
     initdb: {database: pharmaos, owner: pharmaos_owner}
-  storage: {size: 4Ti, storageClass: encrypted-nvme}
-  walStorage: {size: 500Gi, storageClass: encrypted-nvme}
+  storage: {size: 4Ti, storageClass: local-nvme-luks}          # node-local NVMe on LUKS2-encrypted disks
+  walStorage: {size: 500Gi, storageClass: local-nvme-luks}
   affinity:
-    topologyKey: topology.kubernetes.io/zone
+    topologyKey: kubernetes.io/hostname      # use a rack label if racks are labelled
     enablePodAntiAffinity: true
   backup:
     retentionPolicy: "35d"
     barmanObjectStore:
       destinationPath: s3://pharmaos-pg-backup/prod
+      endpointURL: https://rgw.pharmaos-data.svc:443          # local Ceph RGW, never a public cloud
+      endpointCA: {name: internal-ca, key: ca.crt}
       s3Credentials:
         accessKeyId: {name: pg-backup-creds, key: ACCESS_KEY_ID}
         secretAccessKey: {name: pg-backup-creds, key: SECRET_ACCESS_KEY}

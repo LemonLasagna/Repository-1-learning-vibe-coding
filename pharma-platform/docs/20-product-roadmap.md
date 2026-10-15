@@ -15,7 +15,7 @@
 
 | Release | Window (indicative) | Scope | Exit criteria |
 |---|---|---|---|
-| **R0 Foundation** | Q1–Q2 | Org, IAM (Keycloak, RBAC/ABAC, SoD), audit trail + seals, e-signature, metadata runtime, form/field/rule builders, workflow engine v1, notifications, config packages, document storage, search, gateway, CI/CD, Kubernetes baseline | OQ-DI, OQ-ESIG, OQ-WF, OQ-CFG all automated and passing; penetration test |
+| **R0 Foundation** | Q1–Q2 | Org, IAM (Keycloak, RBAC/ABAC, SoD), audit trail + seals, e-signature, metadata runtime, form/field/rule builders, workflow engine v1, notifications, config packages, document storage, search, gateway, CI/CD. **Self-hosted delivery:** tier S compose installer, tier M RKE2 overlays, signed offline release bundles, OpenBao integration, backup/restore tooling | OQ-DI, OQ-ESIG, OQ-WF, OQ-CFG all automated and passing; penetration test |
 | **R1 QMS Core** | Q3–Q4 | DMS (lifecycle, periodic review, controlled print), Training (curricula, R&U, assessments, training gate), Deviations, CAPA, Change Control, RCA tools, dashboards v1, GxP report rendering | First design-partner VAL go-live; vendor runs its own QMS on it |
 | **R2 QMS Complete** | Y2 Q1–Q2 | Complaints (+ PV hand-off), OOS/OOT, Risk/FMEA, Supplier Quality, Audits & Inspections, Management Review, Quality Metrics, PQR, Validation module (CSV lifecycle, online execution, RTM) | 3 customers in PROD; release validation package process proven |
 | **R3 Lab & Warehouse** | Y2 Q3–Q4 | Master data, LIMS (specs, samples, results, stability, EM, CoA, instrument file integration), WMS (receipt, status, FEFO, genealogy, labels, counts, reconciliation), Equipment (calibration, maintenance, cleaning), ERP P2P | Material release value stream (VS-1) live at a design partner |
@@ -46,6 +46,15 @@
 | Configurability turns into an unvalidatable "anything goes" | Config packages, segment packs as reference, guardrails (hard rules in doc 01 §1.8) |
 | MES complexity is underestimated | Design partners from R2; ISA-88 discipline; a narrow first scope (solid dose, one site) |
 | Shared-DB coupling slows teams | Strict schema ownership, expand/contract discipline, cross-schema FK inventory kept current |
+| Customer IT lacks capacity to run a self-hosted GxP stack (patching, backups, DR drills) | Tier S kept to a minimal footprint; installer health checks; optional managed-service partner programme; operating SOPs shipped with the product |
 | Licence changes in infrastructure components | Protocol-level abstractions; licence review gate per release (doc 03) |
 | Regulatory guidance revisions (Annex 11 revision, CSA) | Regulatory intelligence feed → requirement updates → release planning |
 | Customer validation cost blocks adoption | Vendor validation package, automated customer regression subset, risk-based leverage |
+
+## 20.5 Open-source and self-hosting decisions still open
+
+| Decision | Options | Note |
+|---|---|---|
+| Licence of the PharmaOS code itself | Apache 2.0 (open core + paid validation package and support), AGPL-3.0 (stronger copyleft), or source-available | Drives the business model; decide before the first external release |
+| Paid offering if the code is open | Validation package, segment packs, support/SLA, upgrades with regression evidence | The validation evidence is usually what regulated customers pay for |
+| Single-tenant only vs keep multi-tenant capability | Keep it (as now) | Costs little and serves group companies and CMOs |

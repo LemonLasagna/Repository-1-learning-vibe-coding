@@ -40,10 +40,10 @@ synchronous where a GxP interlock requires it.**
 └──────────────┬────────────────────────────────────────────────────────────────────┘
                │ outbox → RabbitMQ (topic exchanges per context) → consumers / indexer
 ┌──────────────▼─────────────── Data & infrastructure ──────────────────────────────┐
-│ PostgreSQL 16 (CloudNativePG) │ Elasticsearch/OpenSearch │ Redis/Valkey │ RabbitMQ    │
-│ MinIO (WORM buckets) │ Keycloak │ Power BI Embedded (non-GxP analytics only)         │
+│ PostgreSQL 16 (local servers) │ OpenSearch │ Valkey │ RabbitMQ │ OpenBao (keys)      │
+│ Ceph RGW / SeaweedFS (S3, Object Lock) │ Keycloak │ Superset (non-GxP analytics)     │
 └──────────────┬────────────────────────────────────────────────────────────────────┘
-┌──────────────▼──────────── Plant edge (per site, DMZ/Level 3.5) ──────────────────┐
+┌──────────────▼──────────── Plant edge (per plant, DMZ/Level 3.5) ─────────────────┐
 │ edge-connector: OPC UA client, balance/printer drivers, store-and-forward queue     │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -54,7 +54,7 @@ synchronous where a GxP interlock requires it.**
 |---|---|---|---|
 | `gateway` | — | Routing, JWT validation, rate limits, API versions, correlation IDs | RPS |
 | `identity-access` | `iam`, `org` | User provisioning from IdP (SCIM/LDAP sync), roles, ABAC policy evaluation (PDP), SoD, access reviews | Policy evals |
-| `config-studio` | `meta`, `notif` (config), `rpt` (definitions) | Builders, config packages, promotion, runtime metadata API (cached in Redis) | Low |
+| `config-studio` | `meta`, `notif` (config), `rpt` (definitions) | Builders, config packages, promotion, runtime metadata API (cached in Valkey) | Low |
 | `workflow-engine` | `wf` | BPMN-subset execution, tasks, timers, escalations, SLA | Tasks/timers |
 | `esignature` | `esig` | Challenge/response re-authentication, manifest rendering, signature binding (record hash) | Burst at release |
 | `audit` | `audit` | Audit-trail query, review workflows, sealing job, export (PDF/CSV), integrity verification | Read volume |
@@ -69,7 +69,7 @@ synchronous where a GxP interlock requires it.**
 | `warehouse` | `wms` | Lots, inventory, picking, genealogy, labels, counts | Transactions |
 | `lims` | `lims` | Samples, tests, results, stability, EM, CoA, instrument integration | Result entry |
 | `regulatory` | `rim` | MAs, submissions, variations, commitments, artwork, labeling | Low |
-| `reporting` | `rpt` (runtime) | GxP report rendering (deterministic), dashboard data API, Power BI embed tokens | Report jobs |
+| `reporting` | `rpt` (runtime) | GxP report rendering (deterministic), dashboard data API, Superset guest tokens | Report jobs |
 | `rendering-worker` | — | PDF/A renditions, watermarking, controlled-copy stamping | CPU |
 | `search-indexer` | — | Consumes outbox events and maintains search indices with ACL fields | Events |
 | `integration-hub` | `intg` | External connectors, mappings, inbound/outbound, migration loaders | Integration load |
@@ -145,7 +145,7 @@ silently allows the action.
 |---|---|---|---|
 | **GxP-controlled** | In-platform `reporting` service: versioned template, deterministic render, PDF/A, output hash stored in `rpt.report_execution` | EBR, CoA, deviation report, audit-trail report, training record, PQR | Validated as part of platform |
 | **Operational** | Dashboard builder (ECharts) on the platform data API | Work queues, overdue lists, KPIs | Verified (low risk) |
-| **Analytical** | Power BI Embedded on a read replica / lakehouse export | Trends, cross-site benchmarking | Not used for GxP decisions; labelled "Not for GxP decision" |
+| **Analytical** | Apache Superset on a PostgreSQL read replica (self-hosted) | Trends, cross-site benchmarking | Not used for GxP decisions; labelled "Not for GxP decision" |
 
 ## 2.7 Frontend architecture (Angular)
 
@@ -174,7 +174,8 @@ Search is never a system of record: every hit is re-authorised on open.
 
 | Attribute | Target |
 |---|---|
-| Availability (prod) | 99.9% monthly for core; MES shop-floor path 99.95% with edge buffering |
+| Deployment | Customer-owned servers only (tiers S/M/L, doc 03 §3.3); air-gap capable |
+| Availability (prod) | 99.9% monthly for core (tier M/L; tier S ≈ 99.5% with a manual standby); MES shop-floor path 99.95% with edge buffering |
 | UI response | p95 < 1.5 s for record open; p95 < 300 ms for MES step confirm |
 | Throughput (reference large tenant) | 25 sites, 8 000 named users, 1 500 concurrent, 400 batches/day, 2 M audit rows/day |
 | RPO / RTO | 5 min / 4 h (doc 16) |

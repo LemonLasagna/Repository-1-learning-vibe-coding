@@ -916,7 +916,7 @@ ALTER TABLE rpt.report_execution ADD CONSTRAINT fk_report_execution_report_defin
 ALTER TABLE rpt.report_execution ADD CONSTRAINT fk_report_execution_executed_by FOREIGN KEY (executed_by) REFERENCES iam.app_user(id);
 ALTER TABLE rpt.report_execution ADD CONSTRAINT fk_report_execution_output_object_id FOREIGN KEY (output_object_id) REFERENCES file.stored_object(id);
 ALTER TABLE rpt.kpi_snapshot ADD CONSTRAINT fk_kpi_snapshot_org_node_id FOREIGN KEY (org_node_id) REFERENCES org.org_node(id);
-ALTER TABLE rpt.powerbi_binding ADD CONSTRAINT fk_powerbi_binding_report_definition_id FOREIGN KEY (report_definition_id) REFERENCES rpt.report_definition(id);
+ALTER TABLE rpt.bi_dashboard_binding ADD CONSTRAINT fk_bi_dashboard_binding_report_definition_id FOREIGN KEY (report_definition_id) REFERENCES rpt.report_definition(id);
 ALTER TABLE rpt.user_dashboard_preference ADD CONSTRAINT fk_user_dashboard_preference_user_id FOREIGN KEY (user_id) REFERENCES iam.app_user(id);
 ALTER TABLE rpt.user_dashboard_preference ADD CONSTRAINT fk_user_dashboard_preference_dashboard_id FOREIGN KEY (dashboard_id) REFERENCES rpt.dashboard_definition(id);
 ALTER TABLE rpt.saved_search ADD CONSTRAINT fk_saved_search_user_id FOREIGN KEY (user_id) REFERENCES iam.app_user(id);

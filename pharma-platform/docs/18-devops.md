@@ -15,7 +15,7 @@ PR ─┬─ build (.NET, Angular) ─ unit tests ─ lint/format ─ architectu
     ├─ rules parity (C# vs TS golden vectors)
     ├─ SAST, SCA, secrets scan, licence policy check
     ├─ OpenAPI diff (breaking change → fail unless version bumped)
-    └─ integration tests (Testcontainers: PG, RabbitMQ, MinIO, Keycloak)
+    └─ integration tests (Testcontainers: PG, RabbitMQ, SeaweedFS, Keycloak, OpenSearch, Valkey)
 main ─ build images → SBOM (CycloneDX) → image scan → sign (cosign) + provenance attestation
      ─ deploy DEV (auto) → E2E smoke
 nightly ─ deploy TEST → full E2E (Playwright) + automated OQ suite + k6 baseline + DAST
@@ -40,8 +40,9 @@ release ─ freeze → release candidate → TEST full regression → release va
 |---|---|
 | DEV, TEST | Automated |
 | Vendor STAGING | Engineering lead |
-| Customer VAL (SaaS) | Vendor release manager + vendor QA (release package approved) |
-| Customer PROD (SaaS) | Customer change control reference required in the PR + vendor operations. The customer chooses the window within the release's support period |
+| Signed release bundle published | Vendor release manager + vendor QA (release validation package approved) |
+| Customer VAL (on-prem) | Customer imports the bundle into Harbor (cosign + Trivy verified) under customer change control |
+| Customer PROD (on-prem) | Same digests as VAL; customer change-control reference in the GitOps PR, or in the compose installer log for tier S. The customer chooses the window |
 
 ## 18.5 Quality gates
 

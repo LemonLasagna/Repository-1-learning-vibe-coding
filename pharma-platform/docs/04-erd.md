@@ -1017,7 +1017,7 @@ Cross-domain references:
 | notification_rule | email_template_id | `meta.email_template` |
 | record_subscription | entity_definition_id | `meta.entity_definition` |
 
-## `file` — Object storage index (MinIO) & retention
+## `file` — Object storage index (S3-compatible, self-hosted) & retention
 
 ```mermaid
 erDiagram
@@ -4477,11 +4477,12 @@ erDiagram
     date period
     numeric value
   }
-  powerbi_binding {
-    varchar workspace_id
-    varchar external_report_id
+  bi_dashboard_binding {
+    varchar engine
+    varchar external_dashboard_id
     uuid report_definition_id FK
-    varchar rls_role
+    varchar dataset_ref
+    varchar row_filter_role
   }
   user_dashboard_preference {
     uuid user_id FK
@@ -4500,7 +4501,7 @@ erDiagram
   data_source |o--o{ report_definition : "data_source_id"
   report_definition ||--o{ report_schedule : "report_definition_id"
   report_definition ||--o{ report_execution : "report_definition_id"
-  report_definition |o--o{ powerbi_binding : "report_definition_id"
+  report_definition |o--o{ bi_dashboard_binding : "report_definition_id"
   dashboard_definition ||--o{ user_dashboard_preference : "dashboard_id"
 ```
 

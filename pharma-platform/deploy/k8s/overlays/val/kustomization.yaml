@@ -6,7 +6,7 @@ resources:
   - ../../platform
   - ../../services/quality
 images:
-  - name: registry.example.com/pharmaos/quality-service
+  - name: harbor.pharmaos.internal/pharmaos/quality-service
     digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
 commonLabels:
   pharmaos.io/environment: val

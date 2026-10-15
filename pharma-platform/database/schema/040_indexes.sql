@@ -1951,8 +1951,8 @@ CREATE INDEX ix_rpt_report_execution_executed_by ON rpt.report_execution (execut
 CREATE INDEX ix_rpt_report_execution_output_object_id ON rpt.report_execution (output_object_id);
 CREATE INDEX ix_rpt_kpi_snapshot_tenant ON rpt.kpi_snapshot (tenant_id);
 CREATE INDEX ix_rpt_kpi_snapshot_org_node_id ON rpt.kpi_snapshot (org_node_id);
-CREATE INDEX ix_rpt_powerbi_binding_tenant ON rpt.powerbi_binding (tenant_id);
-CREATE INDEX ix_rpt_powerbi_binding_report_definition_id ON rpt.powerbi_binding (report_definition_id);
+CREATE INDEX ix_rpt_bi_dashboard_binding_tenant ON rpt.bi_dashboard_binding (tenant_id);
+CREATE INDEX ix_rpt_bi_dashboard_binding_report_definition_id ON rpt.bi_dashboard_binding (report_definition_id);
 CREATE INDEX ix_rpt_user_dashboard_preference_tenant ON rpt.user_dashboard_preference (tenant_id);
 CREATE INDEX ix_rpt_user_dashboard_preference_user_id ON rpt.user_dashboard_preference (user_id);
 CREATE INDEX ix_rpt_user_dashboard_preference_dashboard_id ON rpt.user_dashboard_preference (dashboard_id);

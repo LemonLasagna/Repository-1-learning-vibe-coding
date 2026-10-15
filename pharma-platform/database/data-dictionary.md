@@ -1063,7 +1063,7 @@
 | period_end | timestamptz | N |  |
 | sent_at | timestamptz | Y |  |
 
-## file — Object storage index (MinIO) & retention
+## file — Object storage index (S3-compatible, self-hosted) & retention
 
 ### `file.storage_bucket`  (flags: —; audited)
 
@@ -4769,14 +4769,15 @@
 | period | date | N |  |
 | value | numeric(18,6) | N |  |
 
-### `rpt.powerbi_binding`  (flags: —; audited)
+### `rpt.bi_dashboard_binding`  (flags: —; audited)
 
 | Column | Type | Null | Key |
 |---|---|---|---|
-| workspace_id | varchar(50) | N |  |
-| external_report_id | varchar(50) | N |  |
+| engine | varchar(30) | N |  |
+| external_dashboard_id | varchar(50) | N |  |
 | report_definition_id | uuid | Y | FK → `rpt.report_definition` |
-| rls_role | varchar(50) | Y |  |
+| dataset_ref | varchar(255) | Y |  |
+| row_filter_role | varchar(50) | Y |  |
 
 ### `rpt.user_dashboard_preference`  (flags: N; not audited)
 

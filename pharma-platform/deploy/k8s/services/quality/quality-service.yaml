@@ -21,7 +21,7 @@ spec:
       serviceAccountName: quality-service
       topologySpreadConstraints:
         - maxSkew: 1
-          topologyKey: topology.kubernetes.io/zone
+          topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: DoNotSchedule
           labelSelector: {matchLabels: {app.kubernetes.io/name: quality-service}}
       securityContext:
@@ -31,7 +31,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: app
-          image: registry.example.com/pharmaos/quality-service:REPLACED_BY_OVERLAY   # digest-pinned in overlays
+          image: harbor.pharmaos.internal/pharmaos/quality-service:REPLACED_BY_OVERLAY   # digest-pinned in overlays
           ports: [{name: http, containerPort: 8080}]
           env:
             - {name: ASPNETCORE_URLS, value: "http://+:8080"}
@@ -77,13 +77,13 @@ spec:
   minAvailable: 2
   selector: {matchLabels: {app.kubernetes.io/name: quality-service}}
 ---
-# Secrets come from Vault / cloud secret manager via External Secrets Operator.
+# Secrets come from the self-hosted OpenBao via External Secrets Operator.
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata: {name: quality-db, namespace: pharmaos-services}
 spec:
   refreshInterval: 1h
-  secretStoreRef: {kind: ClusterSecretStore, name: pharmaos-vault}
+  secretStoreRef: {kind: ClusterSecretStore, name: pharmaos-openbao}
   target: {name: quality-db}
   data:
     - secretKey: connection

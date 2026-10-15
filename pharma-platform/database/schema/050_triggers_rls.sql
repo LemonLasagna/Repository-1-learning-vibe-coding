@@ -2141,11 +2141,11 @@ CREATE POLICY tenant_isolation ON rpt.report_execution USING (tenant_id = audit.
 CREATE TRIGGER trg_touch BEFORE UPDATE ON rpt.kpi_snapshot FOR EACH ROW EXECUTE FUNCTION audit.fn_touch();
 ALTER TABLE rpt.kpi_snapshot ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON rpt.kpi_snapshot USING (tenant_id = audit.ctx('tenant_id')::uuid) WITH CHECK (tenant_id = audit.ctx('tenant_id')::uuid);
-CREATE TRIGGER trg_touch BEFORE UPDATE ON rpt.powerbi_binding FOR EACH ROW EXECUTE FUNCTION audit.fn_touch();
-CREATE TRIGGER trg_audit AFTER INSERT OR UPDATE OR DELETE ON rpt.powerbi_binding FOR EACH ROW EXECUTE FUNCTION audit.fn_row_audit();
-CREATE TRIGGER trg_no_delete BEFORE DELETE ON rpt.powerbi_binding FOR EACH ROW EXECUTE FUNCTION audit.fn_block_delete();
-ALTER TABLE rpt.powerbi_binding ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON rpt.powerbi_binding USING (tenant_id = audit.ctx('tenant_id')::uuid) WITH CHECK (tenant_id = audit.ctx('tenant_id')::uuid);
+CREATE TRIGGER trg_touch BEFORE UPDATE ON rpt.bi_dashboard_binding FOR EACH ROW EXECUTE FUNCTION audit.fn_touch();
+CREATE TRIGGER trg_audit AFTER INSERT OR UPDATE OR DELETE ON rpt.bi_dashboard_binding FOR EACH ROW EXECUTE FUNCTION audit.fn_row_audit();
+CREATE TRIGGER trg_no_delete BEFORE DELETE ON rpt.bi_dashboard_binding FOR EACH ROW EXECUTE FUNCTION audit.fn_block_delete();
+ALTER TABLE rpt.bi_dashboard_binding ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON rpt.bi_dashboard_binding USING (tenant_id = audit.ctx('tenant_id')::uuid) WITH CHECK (tenant_id = audit.ctx('tenant_id')::uuid);
 CREATE TRIGGER trg_touch BEFORE UPDATE ON rpt.user_dashboard_preference FOR EACH ROW EXECUTE FUNCTION audit.fn_touch();
 ALTER TABLE rpt.user_dashboard_preference ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON rpt.user_dashboard_preference USING (tenant_id = audit.ctx('tenant_id')::uuid) WITH CHECK (tenant_id = audit.ctx('tenant_id')::uuid);

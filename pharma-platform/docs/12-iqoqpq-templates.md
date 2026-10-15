@@ -42,11 +42,13 @@ that its configuration matches the approved baseline.
 | IQ-INF-005 | URS-DI-001 | Verify `trg_audit` exists on every GxP table (query `pg_trigger` against the catalog list of non-N tables) | Count = expected; zero missing |
 | IQ-INF-006 | URS-DI-002 | Verify that the app role lacks UPDATE/DELETE on `audit.audit_trail` (`has_table_privilege`) | False for both |
 | IQ-INF-007 | URS-GEN-003 | Verify NTP synchronisation on all nodes (offset < 1 s) and DB timezone = UTC | Pass |
-| IQ-INF-008 | URS-SEC-009 | Verify TLS configuration at ingress (protocols ≥ 1.2, approved cipher suites); verify storage encryption enabled (PV class, MinIO SSE, DB volume) | Pass |
+| IQ-INF-008 | URS-SEC-009 | Verify TLS configuration at ingress (protocols ≥ 1.2, approved cipher suites); verify storage encryption enabled (LUKS2 on data servers, Ceph/SeaweedFS encryption settings, DB volume) | Pass |
 | IQ-INF-009 | URS-DI-011 | Verify the backup schedule and WAL archiving status (CNPG `ContinuousArchiving=True`) | Pass |
 | IQ-INF-010 | URS-SEC-001 | Verify the Keycloak realm configuration export matches the baseline (hash of sanitised export) | Match |
 | IQ-INF-011 | URS-CFG-007 | Verify installed config packages: codes, versions, and SHA-256 match the approved CS | Match |
 | IQ-INF-012 | — | Record the SBOM reference for the release | Recorded |
+| IQ-INF-013 | URS-GEN-006 | From each application node, attempt outbound connections to public internet endpoints | All blocked; the system remains fully functional |
+| IQ-INF-014 | URS-GEN-007 | Compare the SBOM licences with the approved open-source licence list | No unapproved licences |
 
 ## 12.2 OQ template — Operational Qualification
 
@@ -121,7 +123,7 @@ with production-representative data, users, and volumes.
 | PQ-E2E-006 | Recall scoping from a finished-goods lot | Forward/backward genealogy complete in ≤ 5 s |
 | PQ-PERF-001 | Load: 1 500 concurrent users, mixed profile, 1 h | p95 targets in doc 02 §2.9 met; zero errors on GxP writes |
 | PQ-BCP-001 | Restore PROD backup to an isolated env; verify seal chain and record counts | RTO ≤ 4 h; `audit.verify_seals()` all OK; counts reconcile |
-| PQ-BCP-002 | Regional failover drill (doc 16) | RPO ≤ 5 min; GxP functions available |
+| PQ-BCP-002 | Secondary data-centre failover drill (doc 16) | RPO ≤ 5 min; GxP functions available |
 
 ## 12.4 Validation Summary Report template (outline)
 

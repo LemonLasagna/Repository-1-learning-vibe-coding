@@ -1,0 +1,188 @@
+# PharmaOS tier S: single-site, single-server installation (doc 03 §3.3).
+# All components are open source and self-hosted. No service needs internet access at runtime.
+#
+#   cp .env.example .env   # edit values
+#   docker compose up -d                       # infrastructure only (database, search, storage, IdP…)
+#   docker compose --profile app up -d         # + PharmaOS services (images from the local Harbor)
+#   docker compose --profile analytics up -d   # + Apache Superset (non-GxP analytics)
+#
+# Image tags must be pinned to digests in production (IQ-INF-002). Tags here are for readability.
+name: pharmaos
+
+x-restart: &restart
+  restart: unless-stopped
+x-logging: &logging
+  logging:
+    driver: json-file
+    options: {max-size: "50m", max-file: "5"}
+
+services:
+  postgres:
+    <<: [*restart, *logging]
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: pharmaos
+      PHARMAOS_APP_PASSWORD: ${PHARMAOS_APP_PASSWORD:?set in .env}
+      TZ: UTC
+      PGTZ: UTC
+    command:
+      - postgres
+      - -c
+      - timezone=UTC
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=test ! -f /wal-archive/%f && cp %p /wal-archive/%f
+      - -c
+      - max_wal_senders=5
+    volumes:
+      - ${DATA_ROOT:-./data}/postgres:/var/lib/postgresql/data
+      - ${DATA_ROOT:-./data}/wal-archive:/wal-archive
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+      - ../../database/schema:/schema:ro
+      - ../../database/tests:/tests:ro
+    ports: ["127.0.0.1:5432:5432"]          # not exposed to the LAN; services reach it on the internal network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pharmaos"]
+      interval: 5s
+      retries: 20
+    networks: [data]
+
+  valkey:
+    <<: [*restart, *logging]
+    image: valkey/valkey:8
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]   # cache only: no GxP state
+    networks: [data]
+
+  rabbitmq:
+    <<: [*restart, *logging]
+    image: rabbitmq:4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: pharmaos
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?set in .env}
+    volumes: ["${DATA_ROOT:-./data}/rabbitmq:/var/lib/rabbitmq"]
+    networks: [data]
+
+  opensearch:
+    <<: [*restart, *logging]
+    image: opensearchproject/opensearch:2
+    environment:
+      discovery.type: single-node
+      OPENSEARCH_JAVA_OPTS: -Xms2g -Xmx2g
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      DISABLE_SECURITY_PLUGIN: "true"     # single host, private network only; enable security plugin for tier M/L
+    ulimits: {memlock: {soft: -1, hard: -1}, nofile: {soft: 65536, hard: 65536}}
+    volumes: ["${DATA_ROOT:-./data}/opensearch:/usr/share/opensearch/data"]
+    networks: [data]
+
+  seaweedfs:
+    <<: [*restart, *logging]
+    image: chrislusf/seaweedfs:latest      # pin a version/digest; S3 API on 8333
+    command: ["server", "-dir=/data", "-s3", "-s3.config=/etc/seaweedfs/s3.json"]
+    volumes:
+      - ${DATA_ROOT:-./data}/objects:/data
+      - ./seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
+    networks: [data]
+
+  keycloak:
+    <<: [*restart, *logging]
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start", "--optimized", "--hostname=${PUBLIC_HOSTNAME}", "--proxy-headers=xforwarded", "--http-enabled=true"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set in .env}
+    depends_on: {postgres: {condition: service_healthy}}
+    networks: [data, edge]
+
+  openbao:
+    <<: [*restart, *logging]
+    image: openbao/openbao:2
+    command: ["server", "-config=/openbao/config/openbao.hcl"]
+    cap_add: [IPC_LOCK]
+    volumes:
+      - ./openbao.hcl:/openbao/config/openbao.hcl:ro
+      - ${DATA_ROOT:-./data}/openbao:/openbao/data
+    networks: [data]
+
+  gotenberg:
+    <<: [*restart, *logging]
+    image: gotenberg/gotenberg:8           # DOCX/HTML → PDF/A rendering (offline)
+    command: ["gotenberg", "--chromium-disable-javascript=true", "--api-timeout=120s"]
+    networks: [data]
+
+  # ---------------- PharmaOS application (profile: app) ----------------
+  gateway:
+    <<: [*restart, *logging]
+    profiles: [app]
+    image: ${REGISTRY}/gateway:${PHARMAOS_VERSION}
+    ports: ["443:8443"]
+    volumes: ["./tls:/tls:ro"]
+    networks: [edge, app]
+
+  platform:
+    <<: [*restart, *logging]
+    profiles: [app]
+    # Tier S runs the platform services (identity, config, workflow, esig, audit, notification,
+    # document, reporting) as one host process to save memory; same code, different composition root.
+    image: ${REGISTRY}/platform-host:${PHARMAOS_VERSION}
+    environment: &appenv
+      ConnectionStrings__Db: Host=postgres;Database=pharmaos;Username=pharmaos_app_login;Password=${PHARMAOS_APP_PASSWORD}
+      RabbitMq__Uri: amqp://pharmaos:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      Cache__Endpoint: valkey:6379
+      Search__Url: http://opensearch:9200
+      Storage__S3Endpoint: http://seaweedfs:8333
+      Storage__AccessKey: ${S3_ACCESS_KEY}
+      Storage__SecretKey: ${S3_SECRET_KEY}
+      Keys__OpenBaoAddress: http://openbao:8200
+      Rendering__GotenbergUrl: http://gotenberg:3000
+      Oidc__Authority: https://${PUBLIC_HOSTNAME}/auth/realms/pharmaos
+      Telemetry__Export: none            # no outbound telemetry
+    depends_on: {postgres: {condition: service_healthy}}
+    networks: [app, data]
+
+  domain:
+    <<: [*restart, *logging]
+    profiles: [app]
+    # Domain services (quality, training, validation, mdm, erp, mes, warehouse, lims, regulatory) in one host.
+    image: ${REGISTRY}/domain-host:${PHARMAOS_VERSION}
+    environment: *appenv
+    depends_on: {postgres: {condition: service_healthy}}
+    networks: [app, data]
+
+  workers:
+    <<: [*restart, *logging]
+    profiles: [app]
+    image: ${REGISTRY}/workers-host:${PHARMAOS_VERSION}   # audit sealer, search indexer, rendering, timers
+    environment: *appenv
+    depends_on: {postgres: {condition: service_healthy}}
+    networks: [app, data]
+
+  web:
+    <<: [*restart, *logging]
+    profiles: [app]
+    image: ${REGISTRY}/web:${PHARMAOS_VERSION}
+    networks: [app]
+
+  # ---------------- Analytics (profile: analytics; non-GxP) ----------------
+  superset:
+    <<: [*restart, *logging]
+    profiles: [analytics]
+    image: apache/superset:4.1.1
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:?set in .env}
+      DATABASE_URL: postgresql+psycopg2://postgres:${POSTGRES_PASSWORD}@postgres:5432/superset
+    depends_on: {postgres: {condition: service_healthy}}
+    networks: [data, edge]
+
+networks:
+  edge: {}                      # reachable via the gateway / reverse proxy only
+  app: {internal: true}
+  data: {internal: true}        # no route to the internet

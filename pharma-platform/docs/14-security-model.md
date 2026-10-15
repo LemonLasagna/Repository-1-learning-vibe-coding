@@ -10,8 +10,8 @@ actions.
 
 | Concern | Design |
 |---|---|
-| IdP broker | Keycloak, one realm per tenant (dedicated tenants) or per region with tenant claim (shared) |
-| Federation | OIDC/SAML to Entra ID / AD FS; LDAP user federation for on-prem AD; SCIM 2.0 provisioning where available |
+| IdP broker | Keycloak (self-hosted), one realm per installation (or per tenant where an installation hosts several group companies) |
+| Federation | LDAP/Kerberos user federation to on-prem Active Directory (default); OIDC/SAML to AD FS or an external IdP only if the customer chooses |
 | MFA | TOTP, FIDO2/WebAuthn (preferred, phishing-resistant). Mandatory for admin, config, release (QP), and remote access |
 | Shop floor | Badge (RFID) + PIN for identification on shared kiosks. **Badge + PIN alone is not accepted for e-signatures** unless the policy and the customer's risk assessment approve it as two distinct components *(customer decision; document the rationale)* |
 | Tokens | Access token 5 min (JWT, audience per service), refresh token rotation, DPoP or mTLS-bound tokens for service clients |
@@ -51,12 +51,12 @@ Effective permission(user, action, record) =
 | Layer | Control |
 |---|---|
 | In transit | TLS 1.3 preferred (1.2 minimum) at the edge; mTLS east-west; DB connections TLS with cert verification |
-| At rest | Encrypted volumes (KMS); MinIO SSE-KMS with per-tenant keys; PostgreSQL on encrypted storage; backups encrypted with a separate key hierarchy |
-| Keys | Cloud KMS or HSM; per-tenant data keys (envelope); rotation yearly or on demand; key-use audit |
+| At rest | LUKS2 full-disk encryption on all servers (TPM2/Tang unlock); object-store encryption with OpenBao-wrapped keys; restic-encrypted backups with a separate key hierarchy |
+| Keys | OpenBao transit (optionally PKCS#11 HSM-backed); per-tenant data keys (envelope); Shamir-split unseal keys held by named custodians; rotation yearly or on demand; key-use audit |
 | Field-level | Sensitive PII (complainant contact, employee health data) is encrypted at the application layer, with a blind index for search |
-| Secrets | External Secrets Operator ← Vault / cloud secret manager; no secrets in images or Git |
+| Secrets | External Secrets Operator ← OpenBao (tier M/L); SOPS-encrypted env files (tier S); no plaintext secrets in images or Git |
 | Object integrity | SHA-256 on every stored object, verified on read for GxP renditions; WORM object lock (compliance mode) on GxP buckets |
-| Privacy | Data residency per region; DPA; data subject requests are handled without breaking GxP retention (pseudonymise where law allows; document conflicts) |
+| Privacy | Data stays in the customer's own data centres (residency is the customer's choice of site); DPA; data subject requests are handled without breaking GxP retention (pseudonymise where law allows; document conflicts) |
 
 ## 14.5 21 CFR Part 11 control mapping
 
@@ -111,7 +111,7 @@ doc 16; archiving → SOP-RET-001.
 | Spoofing | Credential sharing on shop floor | Short idle timeouts, badge + PIN identity, e-sig re-auth, anomaly alerts (same user on two terminals) |
 | Tampering | DBA edits a record directly | Triggers + RLS + no superuser in app path; seals detect trigger-disabled changes; break-glass recording |
 | Repudiation | "I didn't approve that" | Step-up re-auth evidence (`acr`, `auth_time`), signature hash, IP/device in session log |
-| Information disclosure | Cross-tenant leakage | RLS (tested), per-tenant search indices, per-tenant KMS keys |
+| Information disclosure | Cross-tenant leakage | RLS (tested), per-tenant search indices, per-tenant OpenBao keys |
 | Denial of service | API flood | Gateway rate limits, WAF, per-tenant quotas, KEDA scaling |
 | Elevation | Configurator grants self approval role | SoD on role assignment; access requests need an independent approver |
 | Supply chain | Compromised dependency | SBOM, dependency pinning, signature verification (cosign), SCA scanning, provenance (SLSA level target 3) |

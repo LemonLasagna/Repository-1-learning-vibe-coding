@@ -156,7 +156,7 @@ module is built (doc 20).
 
 | ID | Interface | Direction | Protocol |
 |---|---|---|---|
-| FS-INT-001 | Corporate IdP (Entra ID / AD / LDAP) | In | OIDC/SAML via Keycloak; SCIM or LDAP sync |
+| FS-INT-001 | Corporate directory (on-prem AD / LDAP; optional external IdP) | In | OIDC/SAML via Keycloak; SCIM or LDAP sync |
 | FS-INT-002 | Corporate ERP / GL | Out (postings), In (master data, optional) | REST / file / iDoc adapter in integration-hub |
 | FS-INT-003 | Equipment (OPC UA), balances, label printers | In/Out | edge-connector |
 | FS-INT-004 | CDS / SDMS / instruments | In | file-drop, vendor API |
@@ -164,4 +164,4 @@ module is built (doc 20).
 | FS-INT-006 | Serialization system (L3/L4) | Out/In | REST / EPCIS |
 | FS-INT-007 | eCTD publishing tool | In/Out | file/REST |
 | FS-INT-008 | Email (SMTP), Teams/Slack | Out | SMTP, webhooks |
-| FS-INT-009 | Power BI | Out (read replica / export) | Embedded token |
+| FS-INT-009 | Apache Superset (self-hosted) | Out (read replica) | Guest token with row-level filter |

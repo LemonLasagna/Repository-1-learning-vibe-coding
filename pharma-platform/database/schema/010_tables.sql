@@ -1695,7 +1695,7 @@ CREATE TABLE notif.digest_batch (
 COMMENT ON TABLE notif.digest_batch IS 'flags=N; gxp=false';
 
 -- =====================================================================
--- file: Object storage index (MinIO) & retention
+-- file: Object storage index (S3-compatible, self-hosted) & retention
 -- =====================================================================
 CREATE TABLE file.storage_bucket (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -7581,13 +7581,14 @@ CREATE TABLE rpt.kpi_snapshot (
   updated_by uuid NOT NULL
 );
 COMMENT ON TABLE rpt.kpi_snapshot IS 'flags=N; gxp=false';
-CREATE TABLE rpt.powerbi_binding (
+CREATE TABLE rpt.bi_dashboard_binding (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
-  workspace_id varchar(50) NOT NULL,
-  external_report_id varchar(50) NOT NULL,
+  engine varchar(30) NOT NULL,
+  external_dashboard_id varchar(50) NOT NULL,
   report_definition_id uuid,
-  rls_role varchar(50),
+  dataset_ref varchar(255),
+  row_filter_role varchar(50),
   ext jsonb NOT NULL DEFAULT '{}'::jsonb,
   row_version integer NOT NULL DEFAULT 1,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -7595,7 +7596,7 @@ CREATE TABLE rpt.powerbi_binding (
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid NOT NULL
 );
-COMMENT ON TABLE rpt.powerbi_binding IS 'flags=-; gxp=true';
+COMMENT ON TABLE rpt.bi_dashboard_binding IS 'flags=-; gxp=true';
 CREATE TABLE rpt.user_dashboard_preference (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
