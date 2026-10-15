@@ -1,0 +1,52 @@
+# Default deny in every namespace; explicit allows below.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny, namespace: pharmaos-services}
+spec: {podSelector: {}, policyTypes: [Ingress, Egress]}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny, namespace: pharmaos-data}
+spec: {podSelector: {}, policyTypes: [Ingress, Egress]}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny, namespace: pharmaos-platform}
+spec: {podSelector: {}, policyTypes: [Ingress, Egress]}
+---
+# Services: ingress only from gateway; egress to data tier, platform tier and DNS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: services-allow, namespace: pharmaos-services}
+spec:
+  podSelector: {matchLabels: {pharmaos.io/kind: domain-service}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {pharmaos.io/tier: platform}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: gateway}}
+      ports: [{port: 8080, protocol: TCP}]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {pharmaos.io/tier: data}}}]
+      ports: [{port: 5432}, {port: 6432}, {port: 5671}, {port: 6379}, {port: 9000}, {port: 9200}]
+    - to: [{namespaceSelector: {matchLabels: {pharmaos.io/tier: platform}}}]
+      ports: [{port: 8080}, {port: 8443}]
+    - to: [{namespaceSelector: {}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+---
+# Data tier: accept only from services and platform namespaces.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: data-allow, namespace: pharmaos-data}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {pharmaos.io/tier: services}}
+        - namespaceSelector: {matchLabels: {pharmaos.io/tier: platform}}
+        - podSelector: {}          # intra-tier replication
+  egress:
+    - to: [{podSelector: {}}]
+    - to: [{ipBlock: {cidr: 0.0.0.0/0}}]   # backup object storage; narrow to provider endpoints per overlay
+      ports: [{port: 443}]

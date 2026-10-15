@@ -1,0 +1,333 @@
+openapi: 3.1.0
+info:
+  title: PharmaOS Quality API
+  version: 1.0.0
+  description: |
+    Reference contract for the Quality service. Shows the patterns all PharmaOS services follow:
+    transitions instead of status edits, If-Match concurrency, reason-for-change, idempotency keys,
+    cursor pagination, Problem Details errors, e-signature binding, rate-limit headers.
+servers:
+  - url: https://api.example.com/api/quality/v1
+security:
+  - oidc: [quality.read]
+tags:
+  - name: Deviations
+paths:
+  /deviations:
+    get:
+      tags: [Deviations]
+      operationId: listDeviations
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: filter
+          in: query
+          schema: {type: string}
+          example: "status in ('TRIAGE','INVESTIGATION') and classification eq 'MAJOR'"
+        - name: sort
+          in: query
+          schema: {type: string}
+          example: -dueDate
+      responses:
+        '200':
+          description: Page of deviations
+          headers:
+            RateLimit-Limit: {$ref: '#/components/headers/RateLimitLimit'}
+            RateLimit-Remaining: {$ref: '#/components/headers/RateLimitRemaining'}
+            RateLimit-Reset: {$ref: '#/components/headers/RateLimitReset'}
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Deviation'}}
+                  nextCursor: {type: [string, 'null']}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+    post:
+      tags: [Deviations]
+      operationId: createDeviation
+      security: [{oidc: [quality.write]}]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeviationCreate'}
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: {schema: {type: string}}
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deviation'}
+        '422': {$ref: '#/components/responses/ValidationProblem'}
+  /deviations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Deviations]
+      operationId: getDeviation
+      responses:
+        '200':
+          description: Deviation
+          headers:
+            ETag: {schema: {type: string}, description: Quoted rowVersion}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deviation'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [Deviations]
+      operationId: updateDeviation
+      description: JSON Merge Patch of editable fields for the current workflow state. Status cannot be patched.
+      security: [{oidc: [quality.write]}]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/ChangeReason'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: {$ref: '#/components/schemas/DeviationPatch'}
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deviation'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '422': {$ref: '#/components/responses/ValidationProblem'}
+        '428': {$ref: '#/components/responses/PreconditionRequired'}
+  /deviations/{id}/transitions:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Deviations]
+      operationId: listAvailableTransitions
+      responses:
+        '200':
+          description: Transitions available to the caller in the current state
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AvailableTransition'}
+    post:
+      tags: [Deviations]
+      operationId: transitionDeviation
+      description: |
+        Executes a workflow transition. If the transition requires an electronic signature and no
+        signatureId is supplied, returns 428 with a signIntent to pass to the e-signature service.
+      security: [{oidc: [quality.write]}]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TransitionRequest'}
+      responses:
+        '200':
+          description: Transition applied
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deviation'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '428':
+          description: Electronic signature required
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/SignatureRequiredProblem'}
+  /deviations/{id}/audit-trail:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Deviations]
+      operationId: getDeviationAuditTrail
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Field-level history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/AuditEntry'}}
+                  nextCursor: {type: [string, 'null']}
+components:
+  securitySchemes:
+    oidc:
+      type: openIdConnect
+      openIdConnectUrl: https://id.example.com/realms/pharmaos/.well-known/openid-configuration
+  parameters:
+    Id: {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    Limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+    Cursor: {name: cursor, in: query, schema: {type: string}}
+    IfMatch: {name: If-Match, in: header, required: true, schema: {type: string}, description: Quoted rowVersion from ETag}
+    IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, maxLength: 64}}
+    ChangeReason: {name: X-Change-Reason, in: header, schema: {type: string, maxLength: 2000}, description: Required when the entity audit policy requires a reason}
+  headers:
+    RateLimitLimit: {schema: {type: integer}, description: Requests allowed in the current window}
+    RateLimitRemaining: {schema: {type: integer}}
+    RateLimitReset: {schema: {type: integer}, description: Seconds until the window resets}
+  schemas:
+    Signature:
+      type: object
+      required: [id, signerName, meaning, signedAt, recordVersion]
+      properties:
+        id: {type: string, format: uuid}
+        signerName: {type: string}
+        meaning: {type: string, example: APPROVED}
+        meaningLabel: {type: string, example: Approved}
+        signedAt: {type: string, format: date-time}
+        recordVersion: {type: integer}
+        appliesToCurrentVersion: {type: boolean}
+    Deviation:
+      type: object
+      required: [id, deviationNo, title, status, classification, rowVersion]
+      properties:
+        id: {type: string, format: uuid}
+        deviationNo: {type: string, example: DEV-2026-00412}
+        siteId: {type: string, format: uuid}
+        title: {type: string, maxLength: 1000}
+        description: {type: string}
+        classification: {type: string, enum: [MINOR, MAJOR, CRITICAL]}
+        deviationType: {type: string}
+        isPlanned: {type: boolean}
+        occurredAt: {type: string, format: date-time}
+        discoveredAt: {type: string, format: date-time}
+        ownerId: {type: string, format: uuid}
+        dueDate: {type: string, format: date}
+        status: {type: string, readOnly: true}
+        workflowState: {type: string, readOnly: true}
+        riskScore: {type: [integer, 'null']}
+        batches: {type: array, items: {type: string, format: uuid}}
+        ext: {type: object, additionalProperties: true, description: Configured fields (see runtime bundle)}
+        signatures: {type: array, readOnly: true, items: {$ref: '#/components/schemas/Signature'}}
+        rowVersion: {type: integer, readOnly: true}
+        createdAt: {type: string, format: date-time, readOnly: true}
+        updatedAt: {type: string, format: date-time, readOnly: true}
+    DeviationCreate:
+      type: object
+      required: [siteId, title, description, occurredAt, discoveredAt]
+      properties:
+        siteId: {type: string, format: uuid}
+        title: {type: string, maxLength: 1000}
+        description: {type: string}
+        deviationType: {type: string}
+        isPlanned: {type: boolean, default: false}
+        occurredAt: {type: string, format: date-time}
+        discoveredAt: {type: string, format: date-time}
+        areaId: {type: string, format: uuid}
+        productId: {type: string, format: uuid}
+        ext: {type: object, additionalProperties: true}
+    DeviationPatch:
+      type: object
+      properties:
+        title: {type: string, maxLength: 1000}
+        description: {type: string}
+        immediateAction: {type: string}
+        impactAssessment: {type: string}
+        rootCauseSummary: {type: string}
+        ext: {type: object, additionalProperties: true}
+    AvailableTransition:
+      type: object
+      properties:
+        action: {type: string, example: approve}
+        label: {type: string}
+        requiresSignature: {type: boolean}
+        signatureMeaning: {type: [string, 'null']}
+        requiresReason: {type: boolean}
+        blockedBy: {type: array, items: {type: string}, description: Unmet guard conditions}
+    TransitionRequest:
+      type: object
+      required: [action]
+      properties:
+        action: {type: string}
+        signatureId: {type: string, format: uuid}
+        reason: {type: string, maxLength: 2000}
+        comment: {type: string}
+    AuditEntry:
+      type: object
+      properties:
+        occurredAt: {type: string, format: date-time}
+        operation: {type: string, enum: [INSERT, UPDATE, DELETE, EVENT]}
+        actor: {type: string}
+        onBehalfOf: {type: [string, 'null']}
+        reason: {type: [string, 'null']}
+        changes:
+          type: array
+          items:
+            type: object
+            properties:
+              field: {type: string}
+              label: {type: string}
+              oldValue: {}
+              newValue: {}
+    Problem:
+      type: object
+      description: RFC 9457 Problem Details
+      required: [type, title, status]
+      properties:
+        type: {type: string, format: uri}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        instance: {type: string}
+        traceId: {type: string}
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: {type: string}
+              code: {type: string}
+              message: {type: string}
+    SignatureRequiredProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          properties:
+            signIntent:
+              type: object
+              properties:
+                entity: {type: string, example: DEVIATION}
+                recordId: {type: string, format: uuid}
+                recordVersion: {type: integer}
+                recordHash: {type: string, minLength: 64, maxLength: 64}
+                meaning: {type: string}
+                manifest: {type: string}
+                policyId: {type: string, format: uuid}
+  responses:
+    NotFound:
+      description: Not found (or not visible to caller)
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+    Forbidden:
+      description: Permission, ABAC, segregation-of-duties or training-gate denial
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+    Conflict:
+      description: Guard condition failed or signature stale
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+    PreconditionFailed:
+      description: rowVersion in If-Match is stale
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+    PreconditionRequired:
+      description: If-Match header missing
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+    ValidationProblem:
+      description: Validation failed (including missing reason for change)
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After: {schema: {type: integer}}
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}

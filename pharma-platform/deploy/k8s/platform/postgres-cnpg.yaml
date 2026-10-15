@@ -1,0 +1,53 @@
+# CloudNativePG cluster: 1 primary + 2 replicas across AZs, synchronous quorum, WAL archiving (PITR).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata: {name: pharmaos-pg, namespace: pharmaos-data}
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4   # pin by digest in overlays
+  primaryUpdateStrategy: supervised                     # GxP: primary switchover is a controlled change
+  minSyncReplicas: 1
+  maxSyncReplicas: 1
+  postgresql:
+    parameters:
+      timezone: "UTC"
+      log_timezone: "UTC"
+      shared_preload_libraries: "pg_stat_statements"
+      max_connections: "400"
+      wal_compression: "on"
+  bootstrap:
+    initdb: {database: pharmaos, owner: pharmaos_owner}
+  storage: {size: 4Ti, storageClass: encrypted-nvme}
+  walStorage: {size: 500Gi, storageClass: encrypted-nvme}
+  affinity:
+    topologyKey: topology.kubernetes.io/zone
+    enablePodAntiAffinity: true
+  backup:
+    retentionPolicy: "35d"
+    barmanObjectStore:
+      destinationPath: s3://pharmaos-pg-backup/prod
+      s3Credentials:
+        accessKeyId: {name: pg-backup-creds, key: ACCESS_KEY_ID}
+        secretAccessKey: {name: pg-backup-creds, key: SECRET_ACCESS_KEY}
+      wal: {compression: gzip, encryption: AES256}
+      data: {compression: gzip, encryption: AES256}
+  monitoring: {enablePodMonitor: true}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata: {name: pharmaos-pg-daily, namespace: pharmaos-data}
+spec:
+  schedule: "0 0 2 * * *"
+  backupOwnerReference: self
+  cluster: {name: pharmaos-pg}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata: {name: pharmaos-pg-rw, namespace: pharmaos-data}
+spec:
+  cluster: {name: pharmaos-pg}
+  instances: 3
+  type: rw
+  pgbouncer:
+    poolMode: transaction        # safe: GxP context uses SET LOCAL (transaction-scoped)
+    parameters: {max_client_conn: "4000", default_pool_size: "60"}
