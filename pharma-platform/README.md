@@ -21,7 +21,7 @@ anything, open the repository in GitHub Codespaces (INSTALL.md, "Quickest path")
 | `database/model/catalog.dsl` | **Single source of truth** for the data model: 446 entities in 23 bounded contexts | Authoritative |
 | `tools/schema_gen.py` | Generates DDL, ERD, and data dictionary from the catalog | Executable |
 | `tools/rtm_gen.py` | Generates the requirements traceability matrix ([22](docs/22-traceability-matrix.md)) from the URS and the tests | Executable |
-| `database/schema/*.sql` | PostgreSQL 16 DDL: 487 physical tables, 927 FKs, audit triggers, RLS | **Applies cleanly on PG 16** |
+| `database/schema/*.sql` | PostgreSQL 16 DDL: 488 physical tables, 927 FKs, audit triggers, RLS | **Applies cleanly on PG 16** |
 | `database/tests/integrity_tests.sql` | Executable data-integrity controls (OQ-DI-001…009) | **9/9 pass** |
 | `database/data-dictionary.md` | Column-level dictionary (generated) | Generated |
 | `api/openapi/quality-v1.yaml` | Reference OpenAPI 3.1 contract (Quality service) | Reference |
