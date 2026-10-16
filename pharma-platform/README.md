@@ -1,5 +1,8 @@
 # PharmaOS — Configurable GxP Digital Platform
 
+> **Status: development.** Verified by the sole developer only; no independent review or approval yet. Not validated
+> for use in a GxP environment. Do not install it for regulated use (see [INSTALL.md](INSTALL.md)).
+
 Working name for an original, **self-hosted, open-source-stack**, metadata-driven platform that unifies QMS, DMS, LIMS, MES/EBR, WMS, pharma ERP,
 training, validation, audit, and regulatory management on one data model. It is for pharmaceutical,
 biopharmaceutical, vaccine, medical device, cosmetics, and nutraceutical manufacturers.
