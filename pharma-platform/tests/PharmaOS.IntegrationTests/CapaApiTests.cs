@@ -100,6 +100,7 @@ public sealed class CapaApiTests : IClassFixture<PostgresFixture>, IDisposable
     }
 
     [Fact]
+    [Trait("Req", "URS-QMS-007")]
     public async Task Raised_from_a_deviation_it_takes_the_site_and_is_listed_with_it()
     {
         var deviation = await As(Owner).PostAsJsonAsync("/api/qms/v1/deviations", new
@@ -155,6 +156,7 @@ public sealed class CapaApiTests : IClassFixture<PostgresFixture>, IDisposable
     }
 
     [Fact]
+    [Trait("Req", "URS-QMS-008")]
     public async Task Full_lifecycle_with_return_signatures_actions_and_effectiveness()
     {
         // The assignee must be known to PharmaOS: they have used it once.
@@ -213,6 +215,7 @@ public sealed class CapaApiTests : IClassFixture<PostgresFixture>, IDisposable
     }
 
     [Fact]
+    [Trait("Req", "URS-SEC-013")]
     public async Task Nobody_approves_or_verifies_their_own_work_whatever_their_roles()
     {
         var id = await PlannedCapaAsync(Both);
@@ -228,6 +231,7 @@ public sealed class CapaApiTests : IClassFixture<PostgresFixture>, IDisposable
     }
 
     [Fact]
+    [Trait("Req", "URS-QMS-007")]
     public async Task Deviation_closes_only_when_every_linked_capa_plan_is_approved()
     {
         // Deviation up to QA approval.
@@ -270,6 +274,7 @@ public sealed class CapaApiTests : IClassFixture<PostgresFixture>, IDisposable
     }
 
     [Fact]
+    [Trait("Req", "URS-DI-009")]
     public async Task Changes_need_the_current_version_and_the_write_permission()
     {
         var id = await CreateCapaAsync(Owner);

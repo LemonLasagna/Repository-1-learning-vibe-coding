@@ -35,6 +35,8 @@ jobs:
           python-version: "3.12"
       - name: Generated files are in sync with catalog
         run: python3 tools/schema_gen.py --check
+      - name: Traceability matrix is in sync with the URS and the tests
+        run: python3 tools/rtm_gen.py --check
       - name: Apply DDL
         run: for f in database/schema/0*.sql; do psql -q -v ON_ERROR_STOP=1 -f "$f" > /dev/null; done
       - name: Data-integrity tests (OQ-DI-001..009)

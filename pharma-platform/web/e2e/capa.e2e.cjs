@@ -1,4 +1,5 @@
 // End-to-end CAPA lifecycle and its link to a deviation, against a real Keycloak (see bff-signin.e2e.cjs).
+// Requirements shown (doc 22): URS-QMS-006, URS-QMS-007, URS-QMS-008, URS-SEC-014
 // The database needs the demo organisation (install.sh --demo-data). Run: node e2e/capa.e2e.cjs
 'use strict';
 const { chromium } = require('playwright-core');

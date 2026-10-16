@@ -1,4 +1,5 @@
 // End-to-end deviation lifecycle against a real Keycloak, the backend and `ng serve` (see bff-signin.e2e.cjs).
+// Requirements shown (doc 22): URS-QMS-003, URS-SEC-013, URS-SEC-014
 // The database needs the demo organisation (install.sh --demo-data). Run: node e2e/deviation.e2e.cjs
 'use strict';
 const { chromium } = require('playwright-core');

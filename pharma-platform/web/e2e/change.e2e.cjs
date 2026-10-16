@@ -1,4 +1,5 @@
 // End-to-end change control lifecycle, against a real Keycloak (see bff-signin.e2e.cjs).
+// Requirements shown (doc 22): URS-QMS-009, URS-QMS-011, URS-SEC-014
 // The database needs the demo organisation (install.sh --demo-data). Run: node e2e/change.e2e.cjs
 'use strict';
 const { chromium } = require('playwright-core');

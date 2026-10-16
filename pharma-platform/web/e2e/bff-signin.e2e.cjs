@@ -1,4 +1,5 @@
 // End-to-end sign-in and electronic-signature test against a real Keycloak (realm deploy/keycloak/dev-import/pharmaos-realm.json),
+// Requirements shown (doc 22): URS-SEC-001, URS-SEC-013, URS-SEC-014, URS-DI-001
 // the backend in Development mode on :5080 and `ng serve` on :4200. See INSTALL.md, A5 and A6.
 // Run: node e2e/bff-signin.e2e.cjs   (needs playwright-core and a Chromium; CHROMIUM_PATH overrides the browser)
 'use strict';

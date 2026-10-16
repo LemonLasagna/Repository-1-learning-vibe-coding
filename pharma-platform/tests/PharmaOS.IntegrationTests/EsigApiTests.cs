@@ -97,6 +97,7 @@ public sealed class EsigApiTests : IClassFixture<PostgresFixture>, IDisposable
     }
 
     [Fact]
+    [Trait("Req", "URS-SEC-010")]
     public async Task Approval_writes_a_bound_signature_with_manifest_acknowledgement_and_audit_entry()
     {
         var (id, _) = await CreateUomAsync();
@@ -157,6 +158,7 @@ public sealed class EsigApiTests : IClassFixture<PostgresFixture>, IDisposable
     }
 
     [Fact]
+    [Trait("Req", "URS-SEC-013")]
     public async Task Last_editor_and_reviewer_cannot_approve_the_same_version()
     {
         var (id, _) = await CreateUomAsync();
@@ -174,6 +176,7 @@ public sealed class EsigApiTests : IClassFixture<PostgresFixture>, IDisposable
     }
 
     [Fact]
+    [Trait("Req", "URS-SEC-014")]
     public async Task Password_entered_before_the_challenge_is_refused_and_the_challenge_cannot_be_reused()
     {
         var (id, _) = await CreateUomAsync();

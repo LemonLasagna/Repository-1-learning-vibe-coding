@@ -198,6 +198,7 @@ public sealed class DeviationApiTests : IClassFixture<PostgresFixture>, IDisposa
     }
 
     [Fact]
+    [Trait("Req", "URS-SEC-013")]
     public async Task Author_cannot_approve_even_with_every_permission()
     {
         var id = (await CreateAsync(Both)).GetProperty("id").GetGuid();
@@ -213,6 +214,7 @@ public sealed class DeviationApiTests : IClassFixture<PostgresFixture>, IDisposa
     }
 
     [Fact]
+    [Trait("Req", "URS-SEC-012")]
     public async Task Signatures_and_actions_must_match()
     {
         var id = (await CreateAsync(Owner)).GetProperty("id").GetGuid();
@@ -227,6 +229,7 @@ public sealed class DeviationApiTests : IClassFixture<PostgresFixture>, IDisposa
     }
 
     [Fact]
+    [Trait("Req", "URS-SEC-012")]
     public async Task Cancel_needs_a_reason_and_a_signature_and_ends_the_workflow()
     {
         var id = (await CreateAsync(Owner)).GetProperty("id").GetGuid();
@@ -265,6 +268,7 @@ public sealed class DeviationApiTests : IClassFixture<PostgresFixture>, IDisposa
     }
 
     [Fact]
+    [Trait("Req", "URS-DI-009")]
     public async Task Transitions_need_the_current_version()
     {
         var created = await CreateAsync(Owner);
@@ -291,6 +295,7 @@ public sealed class DeviationApiTests : IClassFixture<PostgresFixture>, IDisposa
     }
 
     [Fact]
+    [Trait("Req", "URS-SEC-015")]
     public async Task Login_reused_by_a_new_identity_is_a_conflict_not_a_server_error()
     {
         await CreateAsync(Owner);
@@ -300,6 +305,7 @@ public sealed class DeviationApiTests : IClassFixture<PostgresFixture>, IDisposa
     }
 
     [Fact]
+    [Trait("Req", "URS-SEC-003")]
     public async Task Readers_cannot_raise_or_change_deviations()
     {
         Assert.Equal(HttpStatusCode.Forbidden, (await As(Reader).PostAsJsonAsync("/api/qms/v1/deviations", NewDeviation())).StatusCode);
