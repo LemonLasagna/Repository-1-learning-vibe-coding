@@ -251,6 +251,16 @@ public sealed class WorkflowAuthoringApiTests : IClassFixture<PostgresFixture>, 
     }
 
     [Fact]
+    public async Task Each_record_type_offers_its_current_workflow_as_a_starting_point()
+    {
+        var items = (await As(Author).GetFromJsonAsync<JsonElement>("/api/workflow/v1/workflows")).GetProperty("items").EnumerateArray().ToList();
+        Assert.Equal(["CAPA_STD", "CHANGE_STD", "DEVIATION_STD"], items.Select(i => i.GetProperty("code").GetString()));
+        var capa = items.Single(i => i.GetProperty("code").GetString() == "CAPA_STD");
+        Assert.Equal(CapaWorkflow.Definition.Version, capa.GetProperty("version").GetInt32());
+        Assert.Equal(CapaWorkflow.Definition.Transitions.Count, capa.GetProperty("transitions").GetArrayLength());
+    }
+
+    [Fact]
     public async Task A_user_without_the_authoring_permission_cannot_create_drafts()
     {
         var res = await As(NoAccess).PostAsJsonAsync(Base, Authoring.Capa(Authoring.NewVersion()));

@@ -69,6 +69,14 @@ public sealed class WorkflowStore(NpgsqlConnection conn, NpgsqlTransaction tx)
         await WorkflowTransitions.SetChangeReasonAsync(conn, tx, ctx.ChangeReason, ct);
     }
 
+    /// <summary>The stored definition for <paramref name="code"/>, or null when no record of its type has been created yet.</summary>
+    public async Task<Guid?> DefinitionIdAsync(string code, CancellationToken ct)
+    {
+        await using var cmd = Cmd("SELECT id FROM wf.process_definition WHERE code = @code");
+        cmd.Parameters.AddWithValue("code", code);
+        return await cmd.ExecuteScalarAsync(ct) is Guid id ? id : null;
+    }
+
     /// <summary>
     /// The definition new records start on: the newest released version, which is an activated authored version when one is newer
     /// than the code's release. Falls back to <paramref name="release"/> when nothing is stored.

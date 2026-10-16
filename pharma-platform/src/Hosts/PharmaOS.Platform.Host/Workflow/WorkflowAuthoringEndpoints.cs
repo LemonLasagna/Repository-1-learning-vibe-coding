@@ -187,6 +187,7 @@ public static class WorkflowAuthoringEndpoints
 
     public static void MapWorkflowAuthoringEndpoints(this IEndpointRouteBuilder app)
     {
+        app.MapGet("/api/workflow/v1/workflows", Workflows).RequireAuthorization(Permissions.WorkflowAuthor);
         var group = app.MapGroup(Base);
         group.MapPost("", Create).RequireAuthorization(Permissions.WorkflowAuthor);
         group.MapGet("", List).RequireAuthorization(Permissions.WorkflowAuthor);
@@ -220,6 +221,26 @@ public static class WorkflowAuthoringEndpoints
 
         SetETag(http, row.RowVersion);
         return Results.Created($"{Base}/{id}", DraftResponse.From(row));
+    }
+
+    /// <summary>Each record type's workflow as new records start on it: the starting point for a new draft.</summary>
+    private static async Task<IResult> Workflows(PlatformDbContext db, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var (conn, sqlTx) = Sql(db);
+        var wf = new WorkflowStore(conn, sqlTx);
+        var items = new List<object>();
+        foreach (var code in BuiltInWorkflows.Codes)
+        {
+            var target = BuiltInWorkflows.Find(code)!;
+            var current = await wf.DefinitionIdAsync(code, ct) is { } id ? await wf.CurrentAsync(id, target.Release, ct) : target.Release;
+            items.Add(new
+            {
+                code, recordType = target.Noun, name = target.Name, version = current.Version, initialState = current.InitialState,
+                transitions = WorkflowStore.TransitionsJson(current.Transitions),
+            });
+        }
+        return Results.Ok(new { items });
     }
 
     private static async Task<IResult> List(PlatformDbContext db, CancellationToken ct)
