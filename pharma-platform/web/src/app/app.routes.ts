@@ -47,5 +47,20 @@ export const routes: Routes = [
     title: 'CAPA · PharmaOS',
     loadComponent: () => import('./features/capa/capa-pages').then((m) => m.CapaDetailPage),
   },
+  {
+    path: 'changes',
+    title: 'Change control · PharmaOS',
+    loadComponent: () => import('./features/change/change-pages').then((m) => m.ChangeListPage),
+  },
+  {
+    path: 'changes/new',
+    title: 'New change · PharmaOS',
+    loadComponent: () => import('./features/change/change-pages').then((m) => m.ChangeCreatePage),
+  },
+  {
+    path: 'changes/:id',
+    title: 'Change control · PharmaOS',
+    loadComponent: () => import('./features/change/change-pages').then((m) => m.ChangeDetailPage),
+  },
   { path: '**', redirectTo: 'inbox' },
 ];

@@ -18,8 +18,10 @@ const inbox: Inbox = {
       kind: 'SIGN', detail: null, dueDate: '2027-01-01', overdue: false },
     { entity: 'qms.deviation', recordId: 'd2', number: 'DEV-2026-00003', title: 'Glove tear', state: 'QA_APPROVAL', task: 'Approve and close',
       kind: 'WAITING', detail: 'Waiting for 1 linked CAPA plan(s) to be approved', dueDate: '2026-11-01', overdue: false },
+    { entity: 'qms.change', recordId: 'x1', number: 'CC-2026-00004', title: 'New labeller', state: 'APPROVAL', task: 'Review and approve the change',
+      kind: 'SIGN', detail: null, dueDate: '2027-02-01', overdue: false },
   ],
-  counts: { total: 3, overdue: 1, actionable: 2 },
+  counts: { total: 4, overdue: 1, actionable: 3 },
 };
 
 describe('InboxPage', () => {
@@ -40,14 +42,15 @@ describe('InboxPage', () => {
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
     const rows = Array.from(el.querySelectorAll('li'));
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(4);
     expect(rows[0].classList).toContain('overdue');
     expect(rows[0].textContent).toContain('overdue');
     expect(rows[1].querySelector('a')?.getAttribute('href')).toBe('/capas/c1');
     expect(rows[1].textContent).toContain('Sign ✍');
     expect(rows[2].classList).toContain('waiting');
     expect(rows[2].textContent).toContain('Waiting for 1 linked CAPA plan(s) to be approved');
-    expect(TestBed.inject(InboxApi).counts()).toEqual({ total: 3, overdue: 1, actionable: 2 });
+    expect(rows[3].querySelector('a')?.getAttribute('href')).toBe('/changes/x1');
+    expect(TestBed.inject(InboxApi).counts()).toEqual({ total: 4, overdue: 1, actionable: 3 });
   });
 
   it('says so when nothing is waiting, and asks signed-out users to sign in without calling the API', async () => {

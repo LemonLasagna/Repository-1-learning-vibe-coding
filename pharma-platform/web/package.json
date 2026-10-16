@@ -7,7 +7,7 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "e2e": "node e2e/bff-signin.e2e.cjs && node e2e/deviation.e2e.cjs && node e2e/capa.e2e.cjs"
+    "e2e": "node e2e/bff-signin.e2e.cjs && node e2e/deviation.e2e.cjs && node e2e/capa.e2e.cjs && node e2e/change.e2e.cjs"
   },
   "private": true,
   "packageManager": "npm@11.19.1",

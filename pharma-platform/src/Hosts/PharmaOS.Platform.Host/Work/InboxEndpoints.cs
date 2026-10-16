@@ -203,3 +203,86 @@ public sealed class CapaInbox : IInboxSource
         return items;
     }
 }
+
+public sealed class ChangeInbox : IInboxSource
+{
+    public async Task<IReadOnlyList<InboxItem>> ItemsAsync(NpgsqlConnection conn, NpgsqlTransaction tx, Guid me, IReadOnlySet<string> permissions,
+        DateOnly today, CancellationToken ct)
+    {
+        var write = permissions.Contains(Permissions.ChangeWrite);
+        var approve = permissions.Contains(Permissions.ChangeApprove);
+        if (!permissions.Contains(Permissions.ChangeRead) || !(write || approve)) return [];
+        var items = new List<InboxItem>();
+
+        await using (var cmd = new NpgsqlCommand("""
+            SELECT c.id, c.cc_no, c.title, c.status, c.implementation_due, c.owner_id, c.updated_by,
+                   (SELECT count(*)::int FROM qms.change_task t WHERE t.change_control_id = c.id AND t.status = 'PLANNED'),
+                   (SELECT count(*)::int FROM qms.change_task t WHERE t.change_control_id = c.id AND t.status <> 'WITHDRAWN'),
+                   c.effective_date IS NOT NULL
+              FROM qms.change_control c
+             WHERE (c.status IN ('DRAFT', 'ASSESSMENT', 'IMPLEMENTATION', 'POST_REVIEW') AND c.owner_id = @me AND @write)
+                OR (c.status IN ('APPROVAL', 'IMPLEMENTATION', 'CLOSURE') AND @approve)
+            """, conn, tx))
+        {
+            cmd.Parameters.AddWithValue("me", me);
+            cmd.Parameters.AddWithValue("write", write);
+            cmd.Parameters.AddWithValue("approve", approve);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            while (await r.ReadAsync(ct))
+            {
+                var (id, number, title, state) = (r.GetGuid(0), r.GetString(1), r.GetString(2), r.GetString(3));
+                DateOnly? due = r.IsDBNull(4) ? null : r.GetFieldValue<DateOnly>(4);
+                var owner = r.GetGuid(5) == me;
+                // The approver and verifier must not be the last editor (second person).
+                var lastEditor = r.GetGuid(6) == me;
+                var openTasks = r.GetInt32(7);
+                var plannedTasks = r.GetInt32(8);
+                var effectiveSet = r.GetBoolean(9);
+                InboxItem Item(string task, string kind, string? detail = null) =>
+                    InboxEndpoints.Item("qms.change", id, number, title, state, task, kind, detail, due, today);
+                switch (state)
+                {
+                    case ChangeWorkflow.Draft when owner && write:
+                        items.Add(Item("Complete the description and submit for assessment", InboxKind.Do));
+                        break;
+                    case ChangeWorkflow.Assessment when owner && write:
+                        items.Add(Item("Assess the impact, plan the tasks, then submit for approval", InboxKind.Do));
+                        break;
+                    case ChangeWorkflow.Approval when approve && !lastEditor:
+                        items.Add(Item("Review and approve the change", InboxKind.Sign));
+                        break;
+                    case ChangeWorkflow.Implementation:
+                        if (owner && write && !effectiveSet) items.Add(Item("Set the effective date", InboxKind.Do));
+                        if (approve && !lastEditor && openTasks == 0 && plannedTasks > 0 && effectiveSet)
+                            items.Add(Item("Verify implementation", InboxKind.Sign));
+                        break;
+                    case ChangeWorkflow.PostReview when owner && write:
+                        items.Add(Item("Record the post-implementation review", InboxKind.Do));
+                        break;
+                    case ChangeWorkflow.Closure when approve && !lastEditor:
+                        items.Add(Item("Close the change", InboxKind.Sign));
+                        break;
+                }
+            }
+        }
+
+        if (write)
+        {
+            await using var cmd = new NpgsqlCommand("""
+                SELECT c.id, c.cc_no, c.title, c.status, t.task_no, t.description, t.due_date
+                  FROM qms.change_task t JOIN qms.change_control c ON c.id = t.change_control_id
+                 WHERE t.assignee_id = @me AND t.status = 'PLANNED' AND c.status = 'IMPLEMENTATION'
+                """, conn, tx);
+            cmd.Parameters.AddWithValue("me", me);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            while (await r.ReadAsync(ct))
+            {
+                var description = r.GetString(5);
+                items.Add(InboxEndpoints.Item("qms.change", r.GetGuid(0), r.GetString(1), r.GetString(2), r.GetString(3),
+                    $"Complete task {r.GetInt32(4)}", InboxKind.Do, description.Length > 120 ? description[..117] + "…" : description,
+                    r.GetFieldValue<DateOnly>(6), today));
+            }
+        }
+        return items;
+    }
+}

@@ -91,12 +91,12 @@ public static class CapaEndpoints
         if (gxp.Current is not { } ctx) return MissingIdentity();
         var now = time.GetUtcNow();
         var errors = new Dictionary<string, string[]>();
-        var header = Parse(body, CapaWorkflow.HeaderFields, requireAll: true, errors, extra: ["sourceType", "sourceId", "siteId"]);
+        var header = RequestParsing.Parse(body, CapaWorkflow.HeaderFields, requireAll: true, errors, extra: ["sourceType", "sourceId", "siteId"]);
         var sourceType = (body["sourceType"]?.GetValue<string>() ?? "OTHER").Trim().ToUpperInvariant();
         if (sourceType is not ("DEVIATION" or "OTHER")) errors["sourceType"] = ["One of: DEVIATION, OTHER."];
         Guid? sourceId = null, siteId = null;
-        if (TryGuid(body, "sourceId", errors) is { } s) sourceId = s;
-        if (TryGuid(body, "siteId", errors) is { } site) siteId = site;
+        if (RequestParsing.TryGuid(body, "sourceId", errors) is { } s) sourceId = s;
+        if (RequestParsing.TryGuid(body, "siteId", errors) is { } site) siteId = site;
         if (sourceType == "DEVIATION" && sourceId is null) errors.TryAdd("sourceId", ["Required for a deviation source."]);
         if (sourceType == "OTHER" && siteId is null) errors.TryAdd("siteId", ["Required when the CAPA has no source record."]);
         if (errors.Count > 0) return Results.ValidationProblem(errors);
@@ -161,7 +161,7 @@ public static class CapaEndpoints
         Change(id, CapaWorkflow.Draft, "Plan changed", db, gxp, time, user, http, async (store, ctx, row, now) =>
         {
             var errors = new Dictionary<string, string[]>();
-            var columns = Parse(body, CapaWorkflow.HeaderFields, requireAll: false, errors);
+            var columns = RequestParsing.Parse(body, CapaWorkflow.HeaderFields, requireAll: false, errors);
             if (errors.Count > 0) return Results.ValidationProblem(errors);
             return await store.UpdateAsync(row.Id, row.RowVersion, columns, ct) ? null : Stale("CAPA");
         }, touch: false, ct);
@@ -171,7 +171,7 @@ public static class CapaEndpoints
         Change(id, CapaWorkflow.Draft, "Action planned", db, gxp, time, user, http, async (store, ctx, row, now) =>
         {
             var errors = new Dictionary<string, string[]>();
-            var columns = Parse(body, CapaWorkflow.ActionFields, requireAll: true, errors);
+            var columns = RequestParsing.Parse(body, CapaWorkflow.ActionFields, requireAll: true, errors);
             if (errors.Count > 0) return Results.ValidationProblem(errors);
             columns.TryAdd("assignee_id", ctx.UserId);
             if (columns["assignee_id"] is null) columns["assignee_id"] = ctx.UserId;
@@ -187,7 +187,7 @@ public static class CapaEndpoints
         {
             if (row.Actions.All(a => a.No != no)) return Results.NotFound();
             var errors = new Dictionary<string, string[]>();
-            var columns = Parse(body, CapaWorkflow.ActionFields, requireAll: false, errors, extra: ["withdrawn"]);
+            var columns = RequestParsing.Parse(body, CapaWorkflow.ActionFields, requireAll: false, errors, extra: ["withdrawn"]);
             if (body["withdrawn"] is { } w)
             {
                 if (w.GetValueKind() is JsonValueKind.True or JsonValueKind.False)
@@ -222,7 +222,7 @@ public static class CapaEndpoints
         Change(id, CapaWorkflow.Draft, "Effectiveness check planned", db, gxp, time, user, http, async (store, ctx, row, now) =>
         {
             var errors = new Dictionary<string, string[]>();
-            var columns = Parse(body, CapaWorkflow.EffectivenessFields, requireAll: true, errors);
+            var columns = RequestParsing.Parse(body, CapaWorkflow.EffectivenessFields, requireAll: true, errors);
             if (errors.Count > 0) return Results.ValidationProblem(errors);
             columns.TryAdd("method", null);
             await store.SaveEffectivenessAsync(ctx, row.Id, columns, ct);
@@ -309,33 +309,5 @@ public static class CapaEndpoints
         await tx.CommitAsync(ct);
         SetETag(http, updated.RowVersion);
         return Results.Ok(CapaResponse.From(updated));
-    }
-
-    private static Dictionary<string, object?> Parse(
-        JsonObject body, IReadOnlyList<FieldSpec> specs, bool requireAll, Dictionary<string, string[]> errors, IReadOnlyList<string>? extra = null)
-    {
-        var columns = new Dictionary<string, object?>();
-        foreach (var (name, node) in body)
-        {
-            var f = specs.FirstOrDefault(s => s.Name == name);
-            if (f is null)
-            {
-                if (extra?.Contains(name) != true) errors[name] = ["Unknown field."];
-                continue;
-            }
-            if (FieldParser.TryParse(f, node, out var value, out var error)) columns[f.Column!] = value;
-            else errors[name] = [error!];
-        }
-        if (requireAll)
-            foreach (var f in specs.Where(f => f.Required && !body.ContainsKey(f.Name))) errors.TryAdd(f.Name, ["Required."]);
-        return columns;
-    }
-
-    private static Guid? TryGuid(JsonObject body, string name, Dictionary<string, string[]> errors)
-    {
-        if (body[name] is not { } node || node.GetValueKind() == JsonValueKind.Null) return null;
-        if (node.GetValueKind() == JsonValueKind.String && Guid.TryParse(node.GetValue<string>(), out var g)) return g;
-        errors[name] = ["A UUID."];
-        return null;
     }
 }

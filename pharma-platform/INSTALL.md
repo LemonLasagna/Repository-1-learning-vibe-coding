@@ -179,7 +179,7 @@ PHARMAOS_TEST_PG="Host=localhost;Username=postgres;Password=postgres" \
 ```
 
 The integration tests create and then drop their own throw-away database (`pharmaos_it_…`). They do
-not touch `pharmaos_dev`. Expected: 96 unit tests and 55 integration tests pass.
+not touch `pharmaos_dev`. Expected: 96 unit tests and 67 integration tests pass.
 
 ### A5. Start Keycloak and run the backend
 
@@ -201,9 +201,9 @@ The realm `pharmaos` (`deploy/keycloak/dev-import/pharmaos-realm.json`) contains
 
 | User | Password | Permissions |
 |---|---|---|
-| `qa.analyst` (Quinn Analyst) | `Dev-Only-Pass-2026` | units of measure: read, change; raise and work on deviations and CAPAs; audit trail; sign |
-| `qa.approver` (Avery Approver) | `Dev-Only-Pass-2026` | units of measure: read; deviations: read, triage, approve; CAPA: read, approve; audit trail; sign |
-| `read.only` (Riley Reader) | `Dev-Only-Pass-2026` | read units of measure, deviations and CAPAs |
+| `qa.analyst` (Quinn Analyst) | `Dev-Only-Pass-2026` | units of measure: read, change; raise and work on deviations, CAPAs and change controls; audit trail; sign |
+| `qa.approver` (Avery Approver) | `Dev-Only-Pass-2026` | units of measure: read; deviations: read, triage, approve; CAPA: read, approve; change control: read, approve; audit trail; sign |
+| `read.only` (Riley Reader) | `Dev-Only-Pass-2026` | read units of measure, deviations, CAPAs and change controls |
 
 Permissions are Keycloak client roles of `pharmaos-web`, sent as the `perm` claim. The tenant is the
 user attribute `tenant_id`, which only an administrator can set. `esig.sign` allows electronic signatures;
@@ -238,7 +238,7 @@ curl -i http://localhost:5080/api/mdm/v1/uoms | head -1   # HTTP/1.1 401 Unautho
 ```bash
 cd web
 npm ci                                   # exact versions from package-lock.json
-npx ng test --watch=false                # expect: 91 passed
+npx ng test --watch=false                # expect: 95 passed
 npx ng build                             # production build with strict template checks
 npx ng serve                             # http://localhost:4200
 ```
@@ -270,6 +270,12 @@ npx ng serve                             # http://localhost:4200
   and closed until `qa.approver` has signed **Approve plan ✍**. Then complete each action with evidence, have QA
   sign **Verify implementation ✍**, record the effectiveness result, and have QA sign **Verify effectiveness and
   close ✍**.
+- **Change control**: as `qa.analyst`, **Change control → New change**, choose site BER, describe the change and why, and save
+  the draft; **Submit for assessment**. Record impact assessments (one per area; with a major regulatory impact the
+  regulatory area is needed too), plan at least one task, and **Submit for approval**. As `qa.approver`, find it in "My work",
+  **Return for assessment** (with a reason) or **Approve change ✍**. In Implementation the analyst completes the tasks and sets the
+  effective date; `qa.approver` signs **Verify implementation ✍**. The analyst records the post-implementation review (its
+  conclusion is the reason), and `qa.approver` signs **Close change ✍**.
 
 **End-to-end tests.** With Keycloak, the backend and `ng serve` running, and the demo organisation loaded:
 
@@ -281,8 +287,9 @@ It signs in through the Keycloak page, checks that no token is visible to JavaSc
 unit of measure, checks the audit actor, checks that the editor cannot approve, re-authenticates, signs out,
 checks that `read.only` cannot write, and has `qa.approver` approve the unit with a Keycloak password prompt.
 It then takes a deviation from draft to closed with both users, including the two signatures and the guard, and
-finally runs a CAPA raised from a deviation through plan approval, the deviation's closure, implementation and the
-effectiveness check, checking QA's "My work" list on the way.
+a CAPA raised from a deviation through plan approval, the deviation's closure, implementation and the effectiveness
+check, checking QA's "My work" list on the way, and finally a change control from draft through assessment, return, approval,
+implementation, review and closure.
 The CI job `e2e` runs the same tests.
 
 ### A7. Changing the data model
