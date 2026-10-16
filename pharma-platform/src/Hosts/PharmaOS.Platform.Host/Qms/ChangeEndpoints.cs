@@ -284,6 +284,7 @@ public static class ChangeEndpoints
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var (conn, sqlTx) = Sql(db);
         var row = await new ChangeStore(conn, sqlTx).GetAsync(id, forUpdate: false, ct);
+        var definition = row is null ? null : await new WorkflowStore(conn, sqlTx).DefinitionOfAsync(row, ChangeEntity.Instance, ct);
         await tx.CommitAsync(ct);
         if (row is null) return Results.NotFound();
         var permissions = user.PermissionsOf();
@@ -296,7 +297,7 @@ public static class ChangeEndpoints
             canPlanTasks = write && row.Status == ChangeWorkflow.Assessment,
             canCompleteTasks = write && row.Status == ChangeWorkflow.Implementation,
             canSetDates = write && row.Status == ChangeWorkflow.Implementation,
-            actions = WorkflowTransitions.Available(ChangeWorkflow.Definition, row, permissions),
+            actions = WorkflowTransitions.Available(definition!, row, permissions),
         });
     }
 

@@ -166,7 +166,9 @@ public static class DeviationEndpoints
     private static async Task<IResult> Actions(Guid id, PlatformDbContext db, ClaimsPrincipal user, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var (conn, sqlTx) = Sql(db);
         var row = await Store(db).GetAsync(id, forUpdate: false, ct);
+        var definition = row is null ? null : await new WorkflowStore(conn, sqlTx).DefinitionOfAsync(row, DeviationEntity.Instance, ct);
         await tx.CommitAsync(ct);
         if (row is null) return Results.NotFound();
         var permissions = user.PermissionsOf();
@@ -178,7 +180,7 @@ public static class DeviationEndpoints
             state = row.Status,
             editableFields = editable,
             reasonForChangeRequired = row.Status != DeviationWorkflow.Draft,
-            actions = WorkflowTransitions.Available(DeviationWorkflow.Definition, row, permissions),
+            actions = WorkflowTransitions.Available(definition!, row, permissions),
         });
     }
 

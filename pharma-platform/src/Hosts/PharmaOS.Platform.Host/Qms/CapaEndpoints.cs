@@ -302,6 +302,7 @@ public static class CapaEndpoints
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var (conn, sqlTx) = Sql(db);
         var row = await new CapaStore(conn, sqlTx).GetAsync(id, forUpdate: false, ct);
+        var definition = row is null ? null : await new WorkflowStore(conn, sqlTx).DefinitionOfAsync(row, CapaEntity.Instance, ct);
         await tx.CommitAsync(ct);
         if (row is null) return Results.NotFound();
         var permissions = user.PermissionsOf();
@@ -313,7 +314,7 @@ public static class CapaEndpoints
             canCompleteActions = write && row.Status == CapaWorkflow.Implementation,
             canRecordEffectiveness = write && row.Status == CapaWorkflow.EffectivenessCheck,
             canLinkChanges = write && row.Status is CapaWorkflow.Draft or CapaWorkflow.Implementation,
-            actions = WorkflowTransitions.Available(CapaWorkflow.Definition, row, permissions),
+            actions = WorkflowTransitions.Available(definition!, row, permissions),
         });
     }
 
