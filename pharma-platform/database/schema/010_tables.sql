@@ -1107,6 +1107,23 @@ CREATE TABLE wf.process_transition (
   updated_by uuid NOT NULL
 );
 COMMENT ON TABLE wf.process_transition IS 'flags=-; gxp=true';
+CREATE TABLE wf.workflow_draft (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  code varchar(50) NOT NULL,
+  version_no integer NOT NULL,
+  initial_state varchar(50) NOT NULL,
+  transitions jsonb NOT NULL,
+  status varchar(30) NOT NULL,
+  validation_errors jsonb,
+  ext jsonb NOT NULL DEFAULT '{}'::jsonb,
+  row_version integer NOT NULL DEFAULT 1,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  created_by uuid NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  updated_by uuid NOT NULL
+);
+COMMENT ON TABLE wf.workflow_draft IS 'flags=-; gxp=true';
 CREATE TABLE wf.approval_route_template (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,

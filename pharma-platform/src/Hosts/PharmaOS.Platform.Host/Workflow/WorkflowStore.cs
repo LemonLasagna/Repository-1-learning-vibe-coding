@@ -183,25 +183,25 @@ public sealed class WorkflowStore(NpgsqlConnection conn, NpgsqlTransaction tx)
         ["code"] = def.Code,
         ["version"] = def.Version,
         ["initialState"] = def.InitialState,
-        ["transitions"] = new JsonArray([.. def.Transitions.Select(t => (JsonNode)new JsonObject
-        {
-            ["action"] = t.Action,
-            ["from"] = t.From,
-            ["to"] = t.To,
-            ["label"] = t.Label,
-            ["permission"] = t.Permission,
-            ["guard"] = t.Guard?.DeepClone(),
-            ["guardMessage"] = t.GuardMessage,
-            ["signatureMeaning"] = t.SignatureMeaning,
-            ["requireReason"] = t.RequireReason,
-        })]),
+        ["transitions"] = TransitionsJson(def.Transitions),
     };
 
-    private static WorkflowDefinition FromModel(JsonObject m) => new(
-        m["code"]!.GetValue<string>(),
-        m["version"]!.GetValue<int>(),
-        m["initialState"]!.GetValue<string>(),
-        [.. m["transitions"]!.AsArray().Select(n =>
+    /// <summary>Transitions in the stored shape, shared by released versions and workflow drafts.</summary>
+    internal static JsonArray TransitionsJson(IEnumerable<TransitionDefinition> transitions) => new([.. transitions.Select(t => (JsonNode)new JsonObject
+    {
+        ["action"] = t.Action,
+        ["from"] = t.From,
+        ["to"] = t.To,
+        ["label"] = t.Label,
+        ["permission"] = t.Permission,
+        ["guard"] = t.Guard?.DeepClone(),
+        ["guardMessage"] = t.GuardMessage,
+        ["signatureMeaning"] = t.SignatureMeaning,
+        ["requireReason"] = t.RequireReason,
+    })]);
+
+    internal static IReadOnlyList<TransitionDefinition> TransitionsFromJson(JsonArray array) =>
+        [.. array.Select(n =>
         {
             var o = n!.AsObject();
             return new TransitionDefinition(
@@ -212,7 +212,13 @@ public sealed class WorkflowStore(NpgsqlConnection conn, NpgsqlTransaction tx)
                 Label: Text(o, "label"),
                 RequireReason: o["requireReason"]?.GetValue<bool>() ?? false,
                 GuardMessage: Text(o, "guardMessage"));
-        })]);
+        })];
+
+    private static WorkflowDefinition FromModel(JsonObject m) => new(
+        m["code"]!.GetValue<string>(),
+        m["version"]!.GetValue<int>(),
+        m["initialState"]!.GetValue<string>(),
+        TransitionsFromJson(m["transitions"]!.AsArray()));
 
     private static string? Text(JsonObject o, string name) => o[name]?.GetValue<string>();
 }

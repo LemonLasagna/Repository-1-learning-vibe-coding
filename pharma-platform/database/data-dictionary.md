@@ -692,6 +692,18 @@
 | esig_meaning_id | uuid | Y | FK → `esig.signature_meaning` |
 | sort_order | integer | Y |  |
 
+### `wf.workflow_draft`  (flags: —; audited)
+
+| Column | Type | Null | Key |
+|---|---|---|---|
+| code | varchar(50) | N |  |
+| version_no | integer | N |  |
+| initial_state | varchar(50) | N |  |
+| transitions | jsonb | N |  |
+| status | varchar(30) | N |  |
+| validation_errors | jsonb | Y |  |
+| _unique_ | (code, version_no) | | |
+
 ### `wf.approval_route_template`  (flags: V; audited)
 
 | Column | Type | Null | Key |

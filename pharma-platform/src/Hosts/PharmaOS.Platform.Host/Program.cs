@@ -9,6 +9,7 @@ using PharmaOS.Platform.Host.MasterData;
 using PharmaOS.Platform.Host.Qms;
 using PharmaOS.Platform.Host.Security;
 using PharmaOS.Platform.Host.Work;
+using PharmaOS.Platform.Host.Workflow;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,7 +32,8 @@ builder.Services.AddAuthorizationBuilder()
     .AddPermissionPolicy(Permissions.CapaRead)
     .AddPermissionPolicy(Permissions.CapaWrite)
     .AddPermissionPolicy(Permissions.ChangeRead)
-    .AddPermissionPolicy(Permissions.ChangeWrite);
+    .AddPermissionPolicy(Permissions.ChangeWrite)
+    .AddPermissionPolicy(Permissions.WorkflowAuthor);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ISignableSource, UomSignable>();
 builder.Services.AddSingleton<ISignableSource, DeviationSignable>();
@@ -71,6 +73,7 @@ app.MapEsigEndpoints();
 app.MapDeviationEndpoints();
 app.MapCapaEndpoints();
 app.MapChangeEndpoints();
+app.MapWorkflowAuthoringEndpoints();
 app.MapInboxEndpoints();
 
 app.Run();

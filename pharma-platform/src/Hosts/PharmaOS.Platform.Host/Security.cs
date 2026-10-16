@@ -36,6 +36,9 @@ public static class Permissions
     /// <summary>QA: approve or return the change, verify the implementation, close after the post-implementation review, cancel.</summary>
     public const string ChangeApprove = "qms.change:approve";
 
+    /// <summary>Draft and validate workflow definitions. Approving and activating a draft need a second person (step 2b).</summary>
+    public const string WorkflowAuthor = "wf.definition:author";
+
     /// <summary>
     /// One policy per permission, satisfied by a "perm" claim. In production the identity-access service
     /// resolves role assignments (scoped to org nodes) into these claims; Keycloak roles are not used directly.
