@@ -30,7 +30,7 @@ public sealed class ChangeStore(NpgsqlConnection conn, NpgsqlTransaction tx)
             row = await r.ReadAsync(ct) ? ReadHeader(r) : null;
         }
         if (row is null) return null;
-        return row with { Impacts = await ImpactsAsync(id, ct), Tasks = await TasksAsync(id, ct) };
+        return row with { Impacts = await ImpactsAsync(id, ct), Tasks = await TasksAsync(id, ct), LinkedActions = await LinkedActionsAsync(id, ct) };
     }
 
     public async Task<IReadOnlyList<ChangeRow>> ListAsync(string? status, int limit, CancellationToken ct)
@@ -174,6 +174,20 @@ public sealed class ChangeStore(NpgsqlConnection conn, NpgsqlTransaction tx)
         return list;
     }
 
+    private async Task<IReadOnlyList<ChangeLinkedAction>> LinkedActionsAsync(Guid changeId, CancellationToken ct)
+    {
+        await using var cmd = Cmd("""
+            SELECT c.id, c.capa_no, a.action_no, a.description, a.status
+              FROM qms.capa_action a JOIN qms.capa c ON c.id = a.capa_id
+             WHERE a.change_control_id = @change ORDER BY c.capa_no, a.action_no
+            """);
+        cmd.Parameters.AddWithValue("change", changeId);
+        var list = new List<ChangeLinkedAction>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct)) list.Add(new ChangeLinkedAction(r.GetGuid(0), r.GetString(1), r.GetInt32(2), r.GetString(3), r.GetString(4)));
+        return list;
+    }
+
     /// <summary>Column names come from the field specs in code, never from the request.</summary>
     private async Task InsertRowAsync(string table, IReadOnlyDictionary<string, object?> values, CancellationToken ct)
     {
@@ -185,7 +199,7 @@ public sealed class ChangeStore(NpgsqlConnection conn, NpgsqlTransaction tx)
     private static ChangeRow ReadHeader(NpgsqlDataReader r) => new(
         r.GetGuid(0), r.GetString(1), r.GetGuid(2), r.GetString(3), r.GetString(4), r.GetString(5), r.GetString(6), r.GetString(7),
         r.GetString(8), r.GetBoolean(9), Date(r, 10), Str(r, 11), Date(r, 12), Date(r, 13), r.GetGuid(14), Str(r, 15), r.GetString(16),
-        r.GetFieldValue<DateTimeOffset>(17), r.GetInt32(18), r.GetGuid(19), r.IsDBNull(20) ? null : r.GetGuid(20), [], []);
+        r.GetFieldValue<DateTimeOffset>(17), r.GetInt32(18), r.GetGuid(19), r.IsDBNull(20) ? null : r.GetGuid(20), [], [], []);
 
     private static string? Str(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);
 

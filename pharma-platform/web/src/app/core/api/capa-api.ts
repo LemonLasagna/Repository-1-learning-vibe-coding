@@ -15,6 +15,9 @@ export interface CapaAction {
   status: 'PLANNED' | 'DONE' | 'WITHDRAWN';
   completedAt: string | null;
   evidence: string | null;
+  /** The change control this action is implemented through, if any. */
+  changeId: string | null;
+  changeNo: string | null;
 }
 
 export interface CapaEffectiveness {
@@ -55,6 +58,7 @@ export interface CapaAvailable {
   canEditPlan: boolean;
   canCompleteActions: boolean;
   canRecordEffectiveness: boolean;
+  canLinkChanges: boolean;
   actions: AvailableAction[];
 }
 
@@ -116,6 +120,14 @@ export class CapaApi {
 
   completeAction(id: string, etag: string, no: number, evidence: string): Observable<Versioned<Capa>> {
     return this.send('POST', `${this.base}/${id}/actions/${no}/complete`, etag, { evidence });
+  }
+
+  linkChange(id: string, etag: string, no: number, changeId: string): Observable<Versioned<Capa>> {
+    return this.send('PUT', `${this.base}/${id}/actions/${no}/change`, etag, { changeId });
+  }
+
+  unlinkChange(id: string, etag: string, no: number): Observable<Versioned<Capa>> {
+    return this.send('DELETE', `${this.base}/${id}/actions/${no}/change`, etag, null);
   }
 
   defineEffectiveness(id: string, etag: string, body: { criteria: string; method: string | null; plannedDate: string }): Observable<Versioned<Capa>> {

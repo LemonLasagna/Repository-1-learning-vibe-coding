@@ -26,6 +26,14 @@ export interface ChangeTask {
   completedAt: string | null;
 }
 
+export interface ChangeLinkedAction {
+  capaId: string;
+  capaNo: string;
+  actionNo: number;
+  description: string;
+  status: string;
+}
+
 export interface ChangeControl {
   id: string;
   ccNo: string;
@@ -48,6 +56,7 @@ export interface ChangeControl {
   updatedAt: string;
   impacts: ChangeImpact[];
   tasks: ChangeTask[];
+  linkedActions: ChangeLinkedAction[];
 }
 
 export interface ChangeAvailable {

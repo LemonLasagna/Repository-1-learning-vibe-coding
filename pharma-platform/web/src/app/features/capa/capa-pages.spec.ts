@@ -17,12 +17,12 @@ const capa: Capa = {
   title: 'Fix labeller', problemStatement: 'Missing digits', capaType: 'CORRECTIVE', priority: 'HIGH', ownerId: 'u1', ownerName: 'Quinn Analyst',
   dueDate: '2027-01-13', status: 'DRAFT', closedAt: null, rowVersion: 4, updatedAt: '2026-10-15T08:00:00Z',
   actions: [{ no: 1, actionType: 'CORRECTIVE', description: 'Replace print head', assigneeId: 'u1', assigneeName: 'Quinn Analyst',
-    dueDate: '2026-11-01', status: 'PLANNED', completedAt: null, evidence: null }],
+    dueDate: '2026-11-01', status: 'PLANNED', completedAt: null, evidence: null, changeId: null, changeNo: null }],
   effectiveness: null,
 };
 
 const draft: CapaAvailable = {
-  state: 'DRAFT', canEditPlan: true, canCompleteActions: false, canRecordEffectiveness: false,
+  state: 'DRAFT', canEditPlan: true, canCompleteActions: false, canRecordEffectiveness: false, canLinkChanges: true,
   actions: [{ action: 'submit_plan', label: 'Submit plan for review', to: 'PLAN_REVIEW', signatureMeaning: null, requiresReason: false,
     blockedBy: 'Plan at least one action and the effectiveness check.' }],
 };
@@ -115,9 +115,52 @@ describe('CAPA screens', () => {
     expect(el.textContent).toContain('Action added.');
   });
 
+  it('offers to raise a change from an open action, and to link or unlink an existing one', async () => {
+    const withChange: SessionUser = { ...owner, permissions: [...owner.permissions, 'qms.change:read', 'qms.change:write'] };
+    const { fixture, el } = await renderDetail(withChange, capa, draft);
+    const raise = Array.from(el.querySelectorAll('a')).find((a) => a.textContent?.includes('Raise change'))!;
+    expect(raise.getAttribute('href')).toBe('/changes/new?capaId=c1&actionNo=1');
+
+    button(el, 'Link change…')!.click();
+    http.expectOne('/api/qms/v1/changes').flush({ items: [
+      { id: 'x1', ccNo: 'CC-2026-00004', title: 'New labeller', status: 'ASSESSMENT' },
+      { id: 'x2', ccNo: 'CC-2026-00005', title: 'Old change', status: 'CLOSED' },
+    ] });
+    await fixture.whenStable();
+    const options = Array.from(el.querySelectorAll('select[name="linkChange"] option')).map((o) => o.textContent?.trim());
+    expect(options).toEqual(['Select…', 'CC-2026-00004 · New labeller']);
+    const select = el.querySelector('select[name="linkChange"]') as HTMLSelectElement;
+    select.value = 'x1';
+    select.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+    (Array.from(el.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Link') as HTMLButtonElement).click();
+    const req = http.expectOne('/api/qms/v1/capas/c1/actions/1/change');
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.headers.get('If-Match')).toBe('"4"');
+    expect(req.request.body).toEqual({ changeId: 'x1' });
+    req.flush(capa, { headers: { ETag: '"5"' } });
+    const linked = { ...capa, rowVersion: 5, actions: [{ ...capa.actions[0], changeId: 'x1', changeNo: 'CC-2026-00004' }] };
+    await reload(fixture, withChange, linked, draft);
+    expect(el.querySelector('a[href="/changes/x1"]')?.textContent).toContain('CC-2026-00004');
+    expect(Array.from(el.querySelectorAll('a')).some((a) => a.textContent?.includes('Raise change'))).toBe(false);
+
+    button(el, 'Unlink change')!.click();
+    const del = http.expectOne('/api/qms/v1/capas/c1/actions/1/change');
+    expect(del.request.method).toBe('DELETE');
+    expect(del.request.headers.get('If-Match')).toBe('"5"');
+    del.flush(capa, { headers: { ETag: '"6"' } });
+    await reload(fixture, withChange, { ...capa, rowVersion: 6 }, draft);
+  });
+
+  it('offers no change link without the change permissions', async () => {
+    const { el } = await renderDetail(owner, capa, draft);
+    expect(Array.from(el.querySelectorAll('a')).some((a) => a.textContent?.includes('Raise change'))).toBe(false);
+    expect(button(el, 'Link change…')).toBeUndefined();
+  });
+
   it('completes an action with evidence during implementation', async () => {
     const { fixture, el } = await renderDetail(owner, { ...capa, status: 'IMPLEMENTATION' },
-      { state: 'IMPLEMENTATION', canEditPlan: false, canCompleteActions: true, canRecordEffectiveness: false, actions: [] });
+      { state: 'IMPLEMENTATION', canEditPlan: false, canCompleteActions: true, canRecordEffectiveness: false, canLinkChanges: true, actions: [] });
     button(el, 'Complete…')!.click();
     await fixture.whenStable();
     const evidence = el.querySelector('[aria-label="Complete action"] textarea') as HTMLTextAreaElement;
@@ -129,12 +172,12 @@ describe('CAPA screens', () => {
     expect(req.request.body).toEqual({ evidence: 'Work order WO-4711' });
     req.flush(capa, { headers: { ETag: '"5"' } });
     await reload(fixture, owner, { ...capa, status: 'IMPLEMENTATION', rowVersion: 5 },
-      { state: 'IMPLEMENTATION', canEditPlan: false, canCompleteActions: true, canRecordEffectiveness: false, actions: [] });
+      { state: 'IMPLEMENTATION', canEditPlan: false, canCompleteActions: true, canRecordEffectiveness: false, canLinkChanges: true, actions: [] });
   });
 
   it('signs the plan approval with the action attached, then sends QA to Keycloak', async () => {
     const { fixture, el } = await renderDetail(qa, { ...capa, status: 'PLAN_REVIEW' }, {
-      state: 'PLAN_REVIEW', canEditPlan: false, canCompleteActions: false, canRecordEffectiveness: false,
+      state: 'PLAN_REVIEW', canEditPlan: false, canCompleteActions: false, canRecordEffectiveness: false, canLinkChanges: false,
       actions: [{ action: 'approve_plan', label: 'Approve plan', to: 'IMPLEMENTATION', signatureMeaning: 'APPROVED', requiresReason: false, blockedBy: null }],
     });
     button(el, 'Approve plan')!.click();

@@ -78,7 +78,7 @@ public static class CapaWorkflow
 
 public sealed record CapaActionRow(
     int No, string ActionType, string Description, Guid AssigneeId, string? AssigneeName, DateOnly DueDate, string Status,
-    DateTimeOffset? CompletedAt, string? Evidence);
+    DateTimeOffset? CompletedAt, string? Evidence, Guid? ChangeId = null, string? ChangeNo = null);
 
 public sealed record CapaEffectivenessRow(
     Guid Id, string Criteria, string? Method, DateOnly PlannedDate, DateTimeOffset? PerformedAt, string? Result, string? Evidence,
@@ -128,6 +128,7 @@ public sealed record CapaRow(
             ["status"] = a.Status,
             ["completed_at"] = a.CompletedAt is { } c ? Utc(c) : null,
             ["evidence"] = a.Evidence,
+            ["change_control_id"] = a.ChangeId?.ToString("D"),
         })]),
         ["effectiveness"] = Effectiveness is { } e
             ? new JsonObject

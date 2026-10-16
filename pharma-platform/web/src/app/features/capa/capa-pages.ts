@@ -4,6 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { forkJoin, Observable } from 'rxjs';
 import { AuthService, describeError, EsigApi, formatTimestamp, Versioned } from '../../core/api/api';
 import { AppUser, Capa, CAPA_STATES, CapaApi, CapaAvailable, capaStateLabel } from '../../core/api/capa-api';
+import { ChangeApi, ChangeControl } from '../../core/api/change-api';
 import { DeviationApi, HistoryEntry, Site } from '../../core/api/deviation-api';
 import { AuditTrail } from '../../shared/audit-trail';
 import { HistoryTable } from '../../shared/history-table';
@@ -263,7 +264,7 @@ export class CapaCreatePage implements OnInit {
       <section aria-labelledby="actions-title">
         <h2 id="actions-title">Actions</h2>
         <table>
-          <thead><tr><th>#</th><th>Type</th><th>Description</th><th>Assignee</th><th>Due</th><th>Status</th><th>Evidence</th><th></th></tr></thead>
+          <thead><tr><th>#</th><th>Type</th><th>Description</th><th>Assignee</th><th>Due</th><th>Status</th><th>Evidence</th><th>Change</th><th></th></tr></thead>
           <tbody>
             @for (a of c.actions; track a.no) {
               <tr [class.withdrawn]="a.status === 'WITHDRAWN'">
@@ -274,6 +275,7 @@ export class CapaCreatePage implements OnInit {
                 <td>{{ a.dueDate }}</td>
                 <td>{{ a.status }}</td>
                 <td>{{ a.evidence ?? '' }}</td>
+                <td>@if (a.changeId) {<a [routerLink]="['/changes', a.changeId]">{{ a.changeNo }}</a>}</td>
                 <td>
                   @if (available()?.canEditPlan && a.status === 'PLANNED') {
                     <button type="button" class="secondary small" (click)="withdraw(a.no)">Withdraw</button>
@@ -281,10 +283,22 @@ export class CapaCreatePage implements OnInit {
                   @if (available()?.canCompleteActions && a.status === 'PLANNED') {
                     <button type="button" class="small" (click)="completing.set(a.no); evidence = ''">Complete…</button>
                   }
+                  @if (available()?.canLinkChanges && a.status === 'PLANNED') {
+                    @if (a.changeId) {
+                      <button type="button" class="secondary small" [disabled]="busy()" (click)="unlink(a.no)">Unlink change</button>
+                    } @else {
+                      @if (canRaiseChange()) {
+                        <a class="button secondary small" [routerLink]="['/changes', 'new']" [queryParams]="{ capaId: c.id, actionNo: a.no }">Raise change</a>
+                      }
+                      @if (canLinkExisting()) {
+                        <button type="button" class="secondary small" (click)="openLink(a.no)">Link change…</button>
+                      }
+                    }
+                  }
                 </td>
               </tr>
             } @empty {
-              <tr><td colspan="8">No actions planned.</td></tr>
+              <tr><td colspan="9">No actions planned.</td></tr>
             }
           </tbody>
         </table>
@@ -295,6 +309,19 @@ export class CapaCreatePage implements OnInit {
             <div class="end">
               <button type="button" class="secondary" (click)="completing.set(null)">Cancel</button>
               <button type="button" [disabled]="!evidence.trim() || busy()" (click)="complete(no)">Mark done</button>
+            </div>
+          </div>
+        }
+        @if (linking(); as no) {
+          <div class="panel" role="group" aria-label="Link change">
+            <label>Change control for action {{ no }}
+              <select name="linkChange" [(ngModel)]="linkChangeId">
+                <option value="">Select…</option>
+                @for (ch of openChanges(); track ch.id) {<option [value]="ch.id">{{ ch.ccNo }} · {{ ch.title }}</option>}
+              </select></label>
+            <div class="end">
+              <button type="button" class="secondary" (click)="linking.set(null)">Cancel</button>
+              <button type="button" [disabled]="!linkChangeId || busy()" (click)="link(no)">Link</button>
             </div>
           </div>
         }
@@ -376,6 +403,8 @@ export class CapaCreatePage implements OnInit {
 })
 export class CapaDetailPage implements OnInit {
   private readonly api = inject(CapaApi);
+  private readonly changes = inject(ChangeApi);
+  private readonly auth = inject(AuthService);
   private readonly esig = inject(EsigApi);
   private readonly router = inject(Router);
 
@@ -393,6 +422,11 @@ export class CapaDetailPage implements OnInit {
   readonly history = signal<HistoryEntry[]>([]);
   readonly users = signal<AppUser[]>([]);
   readonly completing = signal<number | null>(null);
+  readonly linking = signal<number | null>(null);
+  readonly openChanges = signal<ChangeControl[]>([]);
+  protected linkChangeId = '';
+  protected readonly canRaiseChange = () => this.auth.hasPermission('qms.change:write');
+  protected readonly canLinkExisting = () => this.auth.hasPermission('qms.change:read');
   readonly error = signal<string | null>(null);
   readonly message = signal<string | null>(null);
   readonly busy = signal(false);
@@ -470,6 +504,23 @@ export class CapaDetailPage implements OnInit {
 
   complete(no: number): void {
     this.mutate(this.api.completeAction(this.id(), this.etag, no, this.evidence.trim()), `Action ${no} done.`, () => this.completing.set(null));
+  }
+
+  openLink(no: number): void {
+    this.linkChangeId = '';
+    this.linking.set(no);
+    this.changes.list().subscribe({
+      next: (list) => this.openChanges.set(list.filter((c) => c.status !== 'CLOSED' && c.status !== 'CANCELLED')),
+      error: (e: unknown) => this.fail(describeError(e)),
+    });
+  }
+
+  link(no: number): void {
+    this.mutate(this.api.linkChange(this.id(), this.etag, no, this.linkChangeId), `Action ${no} linked to a change.`, () => this.linking.set(null));
+  }
+
+  unlink(no: number): void {
+    this.mutate(this.api.unlinkChange(this.id(), this.etag, no), `Action ${no} unlinked from its change.`);
   }
 
   saveCheck(): void {

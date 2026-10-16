@@ -124,11 +124,15 @@ public sealed record ChangeImpactRow(
 public sealed record ChangeTaskRow(
     int No, string Phase, string Description, Guid AssigneeId, string? AssigneeName, DateOnly DueDate, string Status, DateTimeOffset? CompletedAt);
 
+/// <summary>A CAPA action that is implemented through the change (the link is stored on the action).</summary>
+public sealed record ChangeLinkedAction(Guid CapaId, string CapaNo, int ActionNo, string Description, string Status);
+
 public sealed record ChangeRow(
     Guid Id, string CcNo, Guid SiteId, string SiteCode, string Title, string Description, string Justification, string ChangeType,
     string ChangeCategory, bool IsTemporary, DateOnly? TemporaryEndDate, string? RegulatoryImpact, DateOnly? ImplementationDue,
     DateOnly? EffectiveDate, Guid OwnerId, string? OwnerName, string Status, DateTimeOffset UpdatedAt, int RowVersion, Guid UpdatedBy,
-    Guid? WorkflowInstanceId, IReadOnlyList<ChangeImpactRow> Impacts, IReadOnlyList<ChangeTaskRow> Tasks) : IWorkflowRecord
+    Guid? WorkflowInstanceId, IReadOnlyList<ChangeImpactRow> Impacts, IReadOnlyList<ChangeTaskRow> Tasks,
+    IReadOnlyList<ChangeLinkedAction> LinkedActions) : IWorkflowRecord
 {
     public string Number => CcNo;
 
@@ -194,9 +198,9 @@ public sealed record ChangeResponse(
     Guid Id, string CcNo, Guid SiteId, string SiteCode, string Title, string Description, string Justification, string ChangeType,
     string ChangeCategory, bool IsTemporary, DateOnly? TemporaryEndDate, string? RegulatoryImpact, DateOnly? ImplementationDue,
     DateOnly? EffectiveDate, Guid OwnerId, string? OwnerName, string Status, int RowVersion, DateTimeOffset UpdatedAt,
-    IReadOnlyList<ChangeImpactRow> Impacts, IReadOnlyList<ChangeTaskRow> Tasks)
+    IReadOnlyList<ChangeImpactRow> Impacts, IReadOnlyList<ChangeTaskRow> Tasks, IReadOnlyList<ChangeLinkedAction> LinkedActions)
 {
     public static ChangeResponse From(ChangeRow r) => new(r.Id, r.CcNo, r.SiteId, r.SiteCode, r.Title, r.Description, r.Justification,
         r.ChangeType, r.ChangeCategory, r.IsTemporary, r.TemporaryEndDate, r.RegulatoryImpact, r.ImplementationDue, r.EffectiveDate,
-        r.OwnerId, r.OwnerName, r.Status, r.RowVersion, r.UpdatedAt, r.Impacts, r.Tasks);
+        r.OwnerId, r.OwnerName, r.Status, r.RowVersion, r.UpdatedAt, r.Impacts, r.Tasks, r.LinkedActions);
 }

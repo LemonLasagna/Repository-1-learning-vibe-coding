@@ -41,6 +41,20 @@ const { BASE, signIn, step, state, signAction, raiseDeviation } = require('./hel
       await add.locator('textarea').fill('Replace the print head and add it to preventive maintenance.');
       await add.getByRole('button', { name: 'Add action' }).click();
       await analyst.getByText('Action added.').waitFor();
+
+      // The action is implemented through a change control raised from it; each side shows the other.
+      await analyst.getByRole('link', { name: 'Raise change' }).click();
+      await analyst.getByText(/Source: CAPA-\d{4}-\d{5}, action 1/).waitFor();
+      await analyst.getByRole('button', { name: 'Save draft' }).click();
+      await analyst.waitForURL(/\/changes\/[0-9a-f-]{36}$/);
+      const changePath = new URL(analyst.url()).pathname;
+      const linked = analyst.locator('section[aria-labelledby="linked-title"]');
+      await linked.waitFor();
+      assert.match(await linked.innerText(), /CAPA-\d{4}-\d{5}/);
+      await linked.getByRole('link').click();
+      await analyst.waitForURL(`${BASE}${capa}`);
+      await analyst.locator(`a[href="${changePath}"]`).waitFor();
+      assert.equal(await analyst.getByRole('link', { name: 'Raise change' }).count(), 0);
       await analyst.getByRole('button', { name: 'Submit plan for review' }).click();
       await analyst.getByText('Submit plan for review: now Plan review.').waitFor();
     });
