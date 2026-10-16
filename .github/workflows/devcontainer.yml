@@ -1,0 +1,30 @@
+name: devcontainer
+
+# Builds the Codespaces dev container from scratch, as a new codespace would, and checks that PharmaOS comes up.
+on:
+  pull_request:
+    paths: [".devcontainer/**", "pharma-platform/install.sh", "pharma-platform/deploy/keycloak/**", ".github/workflows/devcontainer.yml"]
+  workflow_dispatch:
+
+jobs:
+  up:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Create the container (runs setup.sh, then start.sh)
+        run: npx --yes @devcontainers/cli@0.89.0 up --workspace-folder .
+      - name: Keycloak, backend and screens answer
+        run: |
+          npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . bash -c '
+            set -e
+            curl -fsS http://localhost:8080/realms/pharmaos >/dev/null && echo "Keycloak OK"
+            curl -fsS http://localhost:5080/health/ready && echo
+            test "$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4200/api/mdm/v1/uoms)" = 401 && echo "API through the dev server: 401 as expected"
+            curl -fsS http://localhost:4200/ | grep -q "<app-root" && echo "Screens OK"'
+      - name: Logs
+        if: failure()
+        run: npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . bash -c 'tail -n 50 ~/pharmaos-logs/*.log; tail -n 40 pharma-platform/install-reports/logs-*/*.log' || true

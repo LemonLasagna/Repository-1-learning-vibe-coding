@@ -29,6 +29,13 @@ public static class Bff
             if (string.IsNullOrWhiteSpace(cfg[key]))
                 throw new InvalidOperationException(
                     $"Configuration '{key}' is missing. Is appsettings.json in the content root ({builder.Environment.ContentRootPath})?");
+        // Where the browser reaches the application, when it differs from the address the server sees (e.g. behind
+        // GitHub Codespaces port forwarding). The sign-in callbacks sent to Keycloak are built from it.
+        var publicOrigin = cfg["Oidc:PublicOrigin"]?.TrimEnd('/');
+        if (publicOrigin is { Length: > 0 } && !Uri.TryCreate(publicOrigin, UriKind.Absolute, out _))
+            throw new InvalidOperationException($"Configuration 'Oidc:PublicOrigin' is not an absolute URL: '{publicOrigin}'.");
+        // Optional: read Keycloak's metadata over an internal address while the issuer stays the public one.
+        var metadataAddress = cfg["Oidc:MetadataAddress"];
         builder.Services.AddDistributedMemoryCache();
         builder.Services.AddSingleton<ITicketStore, DistributedCacheTicketStore>();
         builder.Services.AddOptions<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -66,6 +73,7 @@ public static class Bff
                 o.ClientId = cfg["Oidc:ClientId"];
                 o.ClientSecret = cfg["Oidc:ClientSecret"];
                 o.RequireHttpsMetadata = cfg.GetValue("Oidc:RequireHttpsMetadata", true);
+                if (!string.IsNullOrEmpty(metadataAddress)) o.MetadataAddress = metadataAddress;
                 o.ResponseType = "code";
                 o.UsePkce = true;
                 o.SaveTokens = true; // kept in the server-side session store, never sent to the browser
@@ -81,12 +89,19 @@ public static class Bff
                 o.ClaimActions.Remove("acr");
                 o.Events.OnRedirectToIdentityProvider = ctx =>
                 {
+                    if (!string.IsNullOrEmpty(publicOrigin)) ctx.ProtocolMessage.RedirectUri = publicOrigin + ctx.Options.CallbackPath;
                     if (ctx.Properties.Items.TryGetValue(ReauthItem, out _))
                     {
                         ctx.ProtocolMessage.Prompt = "login";
                         ctx.ProtocolMessage.MaxAge = "0";
                         if (ctx.Properties.Items.TryGetValue("login_hint", out var hint)) ctx.ProtocolMessage.LoginHint = hint;
                     }
+                    return Task.CompletedTask;
+                };
+                o.Events.OnRedirectToIdentityProviderForSignOut = ctx =>
+                {
+                    if (!string.IsNullOrEmpty(publicOrigin))
+                        ctx.ProtocolMessage.PostLogoutRedirectUri = publicOrigin + ctx.Options.SignedOutCallbackPath;
                     return Task.CompletedTask;
                 };
                 o.Events.OnTokenValidated = ctx =>
@@ -121,6 +136,7 @@ public static class Bff
                 o.Audience = cfg["Oidc:Audience"];
                 o.MapInboundClaims = false;
                 o.RequireHttpsMetadata = cfg.GetValue("Oidc:RequireHttpsMetadata", true);
+                if (!string.IsNullOrEmpty(metadataAddress)) o.MetadataAddress = metadataAddress;
             });
     }
 
