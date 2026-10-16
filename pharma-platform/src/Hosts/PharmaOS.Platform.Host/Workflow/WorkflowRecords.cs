@@ -77,7 +77,8 @@ public static class WorkflowTransitions
 
     /// <summary>State change, history entry (with the signature, if any) and instance completion, in the caller's transaction.</summary>
     public static async Task<ActionRefusal?> ApplyAsync(
-        NpgsqlConnection conn, NpgsqlTransaction tx, GxpContext ctx, IWorkflowEntity entity, IWorkflowRecord row, TransitionDefinition t,
+        NpgsqlConnection conn, NpgsqlTransaction tx, GxpContext ctx, IWorkflowEntity entity, WorkflowDefinition definition, IWorkflowRecord row,
+        TransitionDefinition t,
         string? reason, Guid? signatureId, string? signatureLabel, DateTimeOffset now, CancellationToken ct)
     {
         var label = t.Label ?? t.Action;
@@ -91,7 +92,7 @@ public static class WorkflowTransitions
         {
             var wf = new WorkflowStore(conn, tx);
             await wf.AddHistoryAsync(ctx, instance, row.Status, t.To, now, reason, signatureId, ct);
-            if (IsFinal(entity.Definition, t.To)) await wf.CompleteInstanceAsync(instance, t.To == "CANCELLED" ? "CANCELLED" : "COMPLETED", now, ct);
+            if (IsFinal(definition, t.To)) await wf.CompleteInstanceAsync(instance, t.To == "CANCELLED" ? "CANCELLED" : "COMPLETED", now, ct);
         }
         return null;
     }
@@ -122,9 +123,10 @@ public static class WorkflowTransitions
         var row = await entity.LoadAsync(conn, sqlTx, id, forUpdate: true, ct);
         if (row is null) return Results.NotFound();
         if (row.RowVersion != expected) return ApiResults.Stale(entity.Noun);
+        var definition = await new WorkflowStore(conn, sqlTx).DefinitionOfAsync(row, entity, ct);
 
         var action = body.Action?.Trim() ?? "";
-        var decision = TransitionEvaluator.Evaluate(entity.Definition, row.Status, action, row.ToRuleData(), user.PermissionsOf(),
+        var decision = TransitionEvaluator.Evaluate(definition, row.Status, action, row.ToRuleData(), user.PermissionsOf(),
             signaturePresented: false);
         if (Refusal(decision) is { } refused) return ApiResults.Problem(refused);
         if (decision is TransitionDecision.SignatureRequired sig)
@@ -132,11 +134,11 @@ public static class WorkflowTransitions
                 detail: $"This step is signed as {EsigCatalog.FindMeaning(sig.Meaning)?.Label ?? sig.Meaning}. Use the e-signature service with action '{action}'.",
                 extensions: new Dictionary<string, object?> { ["code"] = "SIGNATURE_REQUIRED", ["meaning"] = sig.Meaning });
 
-        var t = TransitionEvaluator.Find(entity.Definition, row.Status, action)!;
+        var t = TransitionEvaluator.Find(definition, row.Status, action)!;
         if (t.RequireReason && reason is null) return ApiResults.Invalid("reason", $"'{t.Label}' needs a reason.");
         // The history refers to the acting user's record.
         await new EsigStore(conn, sqlTx).EnsureUserAsync(ctx, user.Login(), user.DisplayName(), user.FindFirst("email")?.Value, ct);
-        if (await ApplyAsync(conn, sqlTx, ctx, entity, row, t, reason, null, null, time.GetUtcNow(), ct) is { } failed)
+        if (await ApplyAsync(conn, sqlTx, ctx, entity, definition, row, t, reason, null, null, time.GetUtcNow(), ct) is { } failed)
             return ApiResults.Problem(failed);
         var updated = await entity.LoadAsync(conn, sqlTx, id, forUpdate: false, ct);
         var response = await respond(conn, sqlTx, id, ct);
@@ -174,7 +176,8 @@ public abstract class WorkflowSignable(IWorkflowEntity entity) : ISignableSource
     {
         var (refusal, row, transition) = await CheckAsync(conn, tx, a, ct);
         if (refusal is not null) return refusal;
-        return await WorkflowTransitions.ApplyAsync(conn, tx, a.Context, entity, row!, transition!, a.Reason, signatureId, a.Meaning.Label, a.Now, ct);
+        var definition = await new WorkflowStore(conn, tx).DefinitionOfAsync(row!, entity, ct);
+        return await WorkflowTransitions.ApplyAsync(conn, tx, a.Context, entity, definition, row!, transition!, a.Reason, signatureId, a.Meaning.Label, a.Now, ct);
     }
 
     private async Task<(ActionRefusal? Refusal, IWorkflowRecord? Row, TransitionDefinition? Transition)> CheckAsync(
@@ -182,10 +185,11 @@ public abstract class WorkflowSignable(IWorkflowEntity entity) : ISignableSource
     {
         var row = await entity.LoadAsync(conn, tx, a.RecordId, forUpdate: true, ct);
         if (row is null) return (new(StatusCodes.Status404NotFound, "NOT_FOUND", "Not found", $"The {entity.Noun} does not exist."), null, null);
-        var decision = TransitionEvaluator.Evaluate(entity.Definition, row.Status, a.Action, row.ToRuleData(), a.Permissions,
+        var definition = await new WorkflowStore(conn, tx).DefinitionOfAsync(row, entity, ct);
+        var decision = TransitionEvaluator.Evaluate(definition, row.Status, a.Action, row.ToRuleData(), a.Permissions,
             signaturePresented: false);
         if (WorkflowTransitions.Refusal(decision) is { } refused) return (refused, row, null);
-        var t = TransitionEvaluator.Find(entity.Definition, row.Status, a.Action)!;
+        var t = TransitionEvaluator.Find(definition, row.Status, a.Action)!;
         if (decision is not TransitionDecision.SignatureRequired required)
             return (new(StatusCodes.Status400BadRequest, "NO_SIGNATURE_NEEDED", "No signature needed",
                 $"'{t.Label}' is done without a signature."), row, t);

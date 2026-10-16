@@ -16,8 +16,8 @@ generated from the tests instead.
 
 | | Requirements | With at least one test |
 |---|---|---|
-| All | 160 | 20 |
-| Mandatory (M) | 135 | 20 |
+| All | 160 | 21 |
+| Mandatory (M) | 135 | 21 |
 
 ## 8.1 General (GEN)
 
@@ -52,7 +52,7 @@ generated from the tests instead.
 | URS-WF-002 | Support rejection loops back to any prior configured step, with loop counters | M · Y · M | — |
 | URS-WF-003 | Support time-based escalation with multiple levels and business calendars | M · N · M | — |
 | URS-WF-004 | Support delegation (planned out-of-office and per-task) with audit of on-behalf-of | M · Y · H | — |
-| URS-WF-005 | Workflow definitions in use by running instances shall not change; instances complete on the version they started on | M · Y · H | — |
+| URS-WF-005 | Workflow definitions in use by running instances shall not change; instances complete on the version they started on | M · Y · H | `WorkflowVersionApiTests (1 tests)` |
 | URS-WF-006 | Provide a simulation mode for configured workflows | H · N · L | — |
 
 ## 8.4 Security (SEC)
@@ -266,7 +266,7 @@ generated from the tests instead.
 
 ## Mandatory requirements that no test names
 
-115 of 135:
+114 of 135:
 
 - URS-GEN-001: The system shall support the organisation hierarchy enterprise → region → country → legal entity → site → plant → building → area → room, plus business units and departments
 - URS-GEN-003: The system shall display date/time in the site time zone with the UTC offset, using a server-controlled time source
@@ -279,7 +279,6 @@ generated from the tests instead.
 - URS-WF-002: Support rejection loops back to any prior configured step, with loop counters
 - URS-WF-003: Support time-based escalation with multiple levels and business calendars
 - URS-WF-004: Support delegation (planned out-of-office and per-task) with audit of on-behalf-of
-- URS-WF-005: Workflow definitions in use by running instances shall not change; instances complete on the version they started on
 - URS-SEC-002: Enforce MFA for privileged users and configurable for all users
 - URS-SEC-004: Attribute-based policies (site, department, confidentiality, record owner, record state)
 - URS-SEC-005: Segregation-of-duties rules that block conflicting role assignments or actions
