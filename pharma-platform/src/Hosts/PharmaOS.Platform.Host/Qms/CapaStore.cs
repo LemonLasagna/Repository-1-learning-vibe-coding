@@ -129,8 +129,11 @@ public sealed class CapaStore(NpgsqlConnection conn, NpgsqlTransaction tx)
     private async Task<IReadOnlyList<CapaActionRow>> ActionsAsync(Guid capaId, CancellationToken ct)
     {
         await using var cmd = Cmd("""
-            SELECT a.action_no, a.action_type, a.description, a.assignee_id, u.display_name, a.due_date, a.status, a.completed_at, a.evidence
-              FROM qms.capa_action a LEFT JOIN iam.app_user u ON u.id = a.assignee_id
+            SELECT a.action_no, a.action_type, a.description, a.assignee_id, u.display_name, a.due_date, a.status, a.completed_at, a.evidence,
+                   a.change_control_id, cc.cc_no
+              FROM qms.capa_action a
+              LEFT JOIN iam.app_user u ON u.id = a.assignee_id
+              LEFT JOIN qms.change_control cc ON cc.id = a.change_control_id
              WHERE a.capa_id = @capa ORDER BY a.action_no
             """);
         cmd.Parameters.AddWithValue("capa", capaId);
@@ -139,7 +142,8 @@ public sealed class CapaStore(NpgsqlConnection conn, NpgsqlTransaction tx)
         while (await r.ReadAsync(ct))
         {
             list.Add(new CapaActionRow(r.GetInt32(0), r.GetString(1), r.GetString(2), r.GetGuid(3), Str(r, 4), r.GetFieldValue<DateOnly>(5),
-                r.GetString(6), r.IsDBNull(7) ? null : r.GetFieldValue<DateTimeOffset>(7), Str(r, 8)));
+                r.GetString(6), r.IsDBNull(7) ? null : r.GetFieldValue<DateTimeOffset>(7), Str(r, 8),
+                r.IsDBNull(9) ? null : r.GetGuid(9), Str(r, 10)));
         }
         return list;
     }

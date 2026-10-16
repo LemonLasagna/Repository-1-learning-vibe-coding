@@ -75,16 +75,36 @@ public static class ChangeEndpoints
         if (gxp.Current is not { } ctx) return MissingIdentity();
         var now = time.GetUtcNow();
         var errors = new Dictionary<string, string[]>();
-        var header = RequestParsing.Parse(body, ChangeWorkflow.HeaderFields, requireAll: true, errors, extra: ["siteId"]);
+        var header = RequestParsing.Parse(body, ChangeWorkflow.HeaderFields, requireAll: true, errors, extra: ["siteId", "sourceCapaId", "sourceActionNo"]);
         Guid? siteId = RequestParsing.TryGuid(body, "siteId", errors);
-        if (siteId is null) errors.TryAdd("siteId", ["Required."]);
+        Guid? capaId = RequestParsing.TryGuid(body, "sourceCapaId", errors);
+        int? actionNo = null;
+        if (body["sourceActionNo"] is { } n && n.GetValueKind() != JsonValueKind.Null)
+        {
+            if (n.GetValueKind() == JsonValueKind.Number && n.GetValue<int>() > 0) actionNo = n.GetValue<int>();
+            else errors["sourceActionNo"] = ["A positive number."];
+        }
+        if (capaId is null != actionNo is null) errors.TryAdd(capaId is null ? "sourceCapaId" : "sourceActionNo", ["Give the CAPA and the action number together."]);
+        if (capaId is null && siteId is null) errors.TryAdd("siteId", ["Required when the change is not raised from a CAPA action."]);
         if (errors.Count > 0) return Results.ValidationProblem(errors);
         if (header.TryGetValue("is_temporary", out var temporary) && temporary is null) header["is_temporary"] = false;
+        // Raising a change from a CAPA action also changes the CAPA (the action is linked), so both permissions are needed.
+        if (capaId is not null && !user.PermissionsOf().Contains(Permissions.CapaWrite))
+            return Problem(StatusCodes.Status403Forbidden, "MISSING_PERMISSION", "Not allowed", $"Linking a CAPA action needs the permission {Permissions.CapaWrite}.");
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var (conn, sqlTx) = Sql(db);
         var store = new ChangeStore(conn, sqlTx);
-        if (!await store.SiteExistsAsync(siteId!.Value, ct)) return Invalid("siteId", "Unknown or inactive site.");
+        var capaStore = new CapaStore(conn, sqlTx);
+        CapaRow? capa = null;
+        if (capaId is { } cid)
+        {
+            capa = await capaStore.GetAsync(cid, forUpdate: true, ct);
+            if (capa is null) return Invalid("sourceCapaId", "Unknown CAPA.");
+            if (CheckLinkable(capa, actionNo!.Value) is { } refused) return refused;
+            siteId = capa.SiteId;
+        }
+        else if (!await store.SiteExistsAsync(siteId!.Value, ct)) return Invalid("siteId", "Unknown or inactive site.");
 
         var esig = new EsigStore(conn, sqlTx);
         var wf = new WorkflowStore(conn, sqlTx);
@@ -98,12 +118,39 @@ public static class ChangeEndpoints
         header.TryAdd("regulatory_impact", "NONE");
         header["site_id"] = siteId;
         await store.InsertAsync(ctx, id, number, instance, header, ct);
-        await wf.AddHistoryAsync(ctx, instance, null, ChangeWorkflow.Draft, now, "Created", null, ct);
+        await wf.AddHistoryAsync(ctx, instance, null, ChangeWorkflow.Draft, now,
+            capa is null ? "Created" : $"Created from {capa.CapaNo}, action {actionNo}", null, ct);
+        if (capa is not null)
+        {
+            // The link is a change to the CAPA's plan: it advances the CAPA's version and shows in its audit trail.
+            await WorkflowTransitions.SetChangeReasonAsync(conn, sqlTx, $"Change {number} raised for action {actionNo}", ct);
+            await capaStore.UpdateActionAsync(capa.Id, actionNo!.Value, new Dictionary<string, object?> { ["change_control_id"] = id }, ct);
+            if (!await capaStore.UpdateAsync(capa.Id, capa.RowVersion, new Dictionary<string, object?>(), ct)) return Stale("CAPA");
+            await WorkflowTransitions.SetChangeReasonAsync(conn, sqlTx, ctx.ChangeReason ?? "Created", ct);
+        }
         var row = (await store.GetAsync(id, forUpdate: false, ct))!;
         await tx.CommitAsync(ct);
 
         SetETag(http, row.RowVersion);
         return Results.Created($"{Base}/{id}", ChangeResponse.From(row));
+    }
+
+    /// <summary>
+    /// A CAPA action can be linked to a change while the plan is being drafted or implemented, if the action is still open and has
+    /// no change yet. (The same rule applies to linking an existing change; see CapaEndpoints.)
+    /// </summary>
+    internal static IResult? CheckLinkable(CapaRow capa, int actionNo)
+    {
+        if (capa.Status is not (CapaWorkflow.Draft or CapaWorkflow.Implementation))
+            return Problem(StatusCodes.Status409Conflict, "WRONG_STATE", "Not possible now",
+                $"An action can be linked to a change while the CAPA is in {CapaWorkflow.Draft} or {CapaWorkflow.Implementation}; it is in {capa.Status}.");
+        var action = capa.Actions.FirstOrDefault(a => a.No == actionNo);
+        if (action is null) return Invalid("sourceActionNo", $"{capa.CapaNo} has no action {actionNo}.");
+        if (action.Status != CapaActionStatus.Planned)
+            return Problem(StatusCodes.Status409Conflict, "ACTION_NOT_OPEN", "Action not open", $"Action {actionNo} is {action.Status.ToLowerInvariant()}.");
+        if (action.ChangeId is not null)
+            return Problem(StatusCodes.Status409Conflict, "ACTION_ALREADY_LINKED", "Already linked", $"Action {actionNo} is already linked to {action.ChangeNo}.");
+        return null;
     }
 
     private static async Task<IResult> List(string? status, PlatformDbContext db, CancellationToken ct)

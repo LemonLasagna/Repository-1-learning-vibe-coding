@@ -113,8 +113,14 @@ Actions (correction, corrective, preventive) have an assignee and due date; they
 plan and completed with evidence during Implementation. The effectiveness check (criteria, method, planned date) is
 planned in Draft plan; its result (effective or ineffective, with evidence) is recorded in Effectiveness check. Every
 change to actions or the check advances the CAPA's version (ETag). A CAPA raised from a deviation takes its site.
+An action can be implemented through a change control (`capa_action.change_control_id`): raise the change from the
+action (it takes the CAPA's site and text), or link an existing open change, while the CAPA is in Draft plan or
+Implementation and the action is open; unlinking is possible under the same conditions. Linking changes the plan, so it
+advances the CAPA's version and the record hash covers the link; the change lists its linked actions. Raising a change
+from an action needs both `qms.capa:write` and `qms.change:write`, linking an existing one `qms.capa:write` and
+`qms.change:read`. A link is information only: it does not yet hold back completing the action or closing the CAPA.
 Not yet: the effectiveness timer (the planned date is recorded, not enforced), a follow-up CAPA raised automatically
-when the check is ineffective, action-level workflows, and change-control links.
+when the check is ineffective, action-level workflows, and guards that wait for the linked change.
 
 ### 9.3.3 Reference workflow: Change Control
 `Draft → Initial Assessment (classify; risk) → Impact Assessment (parallel per impacted area) → Approval to
@@ -147,7 +153,7 @@ Not yet: separate initial and parallel impact assessments assigned automatically
 (documents, equipment, registered details), regulatory assessments per country and variation records, the risk
 assessment link, the coordinated effective date triggering document effective dates, recipe versions and retraining,
 enforcement of the end date of a temporary change (it is recorded and required, not enforced), and links from deviations
-and CAPAs.
+(the data model has no deviation link on a change; a deviation reaches a change through its CAPA actions, see 9.3.2).
 
 ### 9.3.4 Reference workflow: Training
 `Assigned → In Progress → (Assessment) → Completed✍ (trainee) → [OJT: Trainer Verified✍] → Qualified`, with

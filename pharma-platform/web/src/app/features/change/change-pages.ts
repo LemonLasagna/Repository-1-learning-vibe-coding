@@ -128,12 +128,16 @@ export class ChangeListPage implements OnInit {
     <h1>New change</h1>
     @if (error()) {<p class="banner error" role="alert">{{ error() }}</p>}
     <form [formGroup]="form" (ngSubmit)="save()" class="grid">
-      <label>Site <span class="req">*</span>
-        <select formControlName="siteId">
-          <option [ngValue]="null">Select…</option>
-          @for (s of sites(); track s.id) {<option [ngValue]="s.id">{{ s.code }} · {{ s.name }}</option>}
-        </select>
-      </label>
+      @if (sourceLabel(); as source) {
+        <p class="wide">Source: <strong>{{ source }}</strong> (the change takes its site and is linked to the action)</p>
+      } @else {
+        <label>Site <span class="req">*</span>
+          <select formControlName="siteId">
+            <option [ngValue]="null">Select…</option>
+            @for (s of sites(); track s.id) {<option [ngValue]="s.id">{{ s.code }} · {{ s.name }}</option>}
+          </select>
+        </label>
+      }
       <label class="wide">Title <span class="req">*</span><input formControlName="title" maxlength="1000" /></label>
       <label class="wide">Description of the change <span class="req">*</span><textarea formControlName="description" rows="4"></textarea></label>
       <label class="wide">Justification <span class="req">*</span><textarea formControlName="justification" rows="3"></textarea></label>
@@ -165,8 +169,14 @@ export class ChangeListPage implements OnInit {
 })
 export class ChangeCreatePage implements OnInit {
   private readonly api = inject(ChangeApi);
+  private readonly capas = inject(CapaApi);
   private readonly deviations = inject(DeviationApi);
   private readonly router = inject(Router);
+
+  /** Query parameters: the CAPA action this change implements (site and text are taken from it). */
+  readonly capaId = input<string | undefined>(undefined);
+  readonly actionNo = input<string | undefined>(undefined);
+  readonly sourceLabel = signal<string | null>(null);
 
   protected readonly types = CHANGE_TYPES;
   protected readonly categories = CATEGORIES;
@@ -189,6 +199,25 @@ export class ChangeCreatePage implements OnInit {
   });
 
   ngOnInit(): void {
+    const capaId = this.capaId();
+    const no = Number(this.actionNo());
+    if (capaId && no > 0) {
+      this.form.controls.siteId.clearValidators();
+      this.form.controls.siteId.updateValueAndValidity();
+      this.capas.get(capaId).subscribe({
+        next: ({ value: c }) => {
+          const action = c.actions.find((a) => a.no === no);
+          this.sourceLabel.set(`${c.capaNo}, action ${no}`);
+          this.form.patchValue({
+            title: `${c.capaNo} action ${no}: ${action?.description ?? c.title}`.slice(0, 120),
+            description: action?.description ?? '',
+            justification: `Implements ${c.capaNo} action ${no}: ${c.title}`,
+          });
+        },
+        error: (e: unknown) => this.error.set(describeError(e)),
+      });
+      return;
+    }
     this.deviations.sites().subscribe({
       next: (sites) => {
         this.sites.set(sites);
@@ -206,8 +235,10 @@ export class ChangeCreatePage implements OnInit {
     }
     const v = this.form.getRawValue();
     this.busy.set(true);
+    const fromAction = this.capaId() && Number(this.actionNo()) > 0;
     const body: Record<string, unknown> = {
-      siteId: v.siteId, title: v.title, description: v.description, justification: v.justification, changeType: v.changeType,
+      ...(fromAction ? { sourceCapaId: this.capaId(), sourceActionNo: Number(this.actionNo()) } : { siteId: v.siteId }),
+      title: v.title, description: v.description, justification: v.justification, changeType: v.changeType,
       changeCategory: v.changeCategory, regulatoryImpact: v.regulatoryImpact, isTemporary: v.isTemporary,
       ...(v.isTemporary && v.temporaryEndDate ? { temporaryEndDate: v.temporaryEndDate } : {}),
       ...(v.implementationDue ? { implementationDue: v.implementationDue } : {}),
@@ -273,6 +304,25 @@ export class ChangeCreatePage implements OnInit {
         <p class="text">{{ c.description }}</p>
         <h2>Justification</h2>
         <p class="text">{{ c.justification }}</p>
+      }
+
+      @if (c.linkedActions.length) {
+        <section aria-labelledby="linked-title">
+          <h2 id="linked-title">CAPA actions implemented through this change</h2>
+          <table>
+            <thead><tr><th>CAPA</th><th>Action</th><th>Description</th><th>Status</th></tr></thead>
+            <tbody>
+              @for (l of c.linkedActions; track l.capaId + l.actionNo) {
+                <tr>
+                  <td><a [routerLink]="['/capas', l.capaId]">{{ l.capaNo }}</a></td>
+                  <td>{{ l.actionNo }}</td>
+                  <td>{{ l.description }}</td>
+                  <td>{{ l.status }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </section>
       }
 
       <section aria-labelledby="impact-title">

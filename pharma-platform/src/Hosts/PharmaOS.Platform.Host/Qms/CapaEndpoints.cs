@@ -64,6 +64,8 @@ public static class CapaEndpoints
         group.MapPost("{id:guid}/actions", AddAction).RequireAuthorization(Permissions.CapaWrite);
         group.MapPatch("{id:guid}/actions/{no:int}", UpdateAction).RequireAuthorization(Permissions.CapaWrite);
         group.MapPost("{id:guid}/actions/{no:int}/complete", CompleteAction).RequireAuthorization(Permissions.CapaWrite);
+        group.MapPut("{id:guid}/actions/{no:int}/change", LinkChange).RequireAuthorization(Permissions.CapaWrite);
+        group.MapDelete("{id:guid}/actions/{no:int}/change", UnlinkChange).RequireAuthorization(Permissions.CapaWrite);
         group.MapPut("{id:guid}/effectiveness", DefineEffectiveness).RequireAuthorization(Permissions.CapaWrite);
         group.MapPost("{id:guid}/effectiveness/result", RecordEffectiveness).RequireAuthorization(Permissions.CapaWrite);
         group.MapPost("{id:guid}/transitions", Transition).RequireAuthorization(Permissions.CapaRead);
@@ -158,7 +160,7 @@ public static class CapaEndpoints
 
     private static Task<IResult> UpdateHeader(
         Guid id, JsonObject body, PlatformDbContext db, IGxpContextAccessor gxp, TimeProvider time, ClaimsPrincipal user, HttpContext http, CancellationToken ct) =>
-        Change(id, CapaWorkflow.Draft, "Plan changed", db, gxp, time, user, http, async (store, ctx, row, now) =>
+        Change(id, [CapaWorkflow.Draft], "Plan changed", db, gxp, time, user, http, async (store, ctx, row, now) =>
         {
             var errors = new Dictionary<string, string[]>();
             var columns = RequestParsing.Parse(body, CapaWorkflow.HeaderFields, requireAll: false, errors);
@@ -168,7 +170,7 @@ public static class CapaEndpoints
 
     private static Task<IResult> AddAction(
         Guid id, JsonObject body, PlatformDbContext db, IGxpContextAccessor gxp, TimeProvider time, ClaimsPrincipal user, HttpContext http, CancellationToken ct) =>
-        Change(id, CapaWorkflow.Draft, "Action planned", db, gxp, time, user, http, async (store, ctx, row, now) =>
+        Change(id, [CapaWorkflow.Draft], "Action planned", db, gxp, time, user, http, async (store, ctx, row, now) =>
         {
             var errors = new Dictionary<string, string[]>();
             var columns = RequestParsing.Parse(body, CapaWorkflow.ActionFields, requireAll: true, errors);
@@ -183,7 +185,7 @@ public static class CapaEndpoints
 
     private static Task<IResult> UpdateAction(
         Guid id, int no, JsonObject body, PlatformDbContext db, IGxpContextAccessor gxp, TimeProvider time, ClaimsPrincipal user, HttpContext http, CancellationToken ct) =>
-        Change(id, CapaWorkflow.Draft, $"Action {no} changed", db, gxp, time, user, http, async (store, ctx, row, now) =>
+        Change(id, [CapaWorkflow.Draft], $"Action {no} changed", db, gxp, time, user, http, async (store, ctx, row, now) =>
         {
             if (row.Actions.All(a => a.No != no)) return Results.NotFound();
             var errors = new Dictionary<string, string[]>();
@@ -203,7 +205,7 @@ public static class CapaEndpoints
 
     private static Task<IResult> CompleteAction(
         Guid id, int no, JsonObject body, PlatformDbContext db, IGxpContextAccessor gxp, TimeProvider time, ClaimsPrincipal user, HttpContext http, CancellationToken ct) =>
-        Change(id, CapaWorkflow.Implementation, $"Action {no} completed", db, gxp, time, user, http, async (store, ctx, row, now) =>
+        Change(id, [CapaWorkflow.Implementation], $"Action {no} completed", db, gxp, time, user, http, async (store, ctx, row, now) =>
         {
             var action = row.Actions.FirstOrDefault(a => a.No == no);
             if (action is null) return Results.NotFound();
@@ -217,9 +219,42 @@ public static class CapaEndpoints
             return null;
         }, touch: true, ct);
 
+    /// <summary>Links an open action to an existing change control (to raise a new one, create the change from the action).</summary>
+    private static Task<IResult> LinkChange(
+        Guid id, int no, JsonObject body, PlatformDbContext db, IGxpContextAccessor gxp, TimeProvider time, ClaimsPrincipal user, HttpContext http, CancellationToken ct) =>
+        Change(id, [CapaWorkflow.Draft, CapaWorkflow.Implementation], $"Action {no} linked to a change", db, gxp, time, user, http, async (store, ctx, row, now) =>
+        {
+            if (!user.PermissionsOf().Contains(Permissions.ChangeRead))
+                return Problem(StatusCodes.Status403Forbidden, "MISSING_PERMISSION", "Not allowed", $"Linking a change needs the permission {Permissions.ChangeRead}.");
+            var errors = new Dictionary<string, string[]>();
+            if (RequestParsing.TryGuid(body, "changeId", errors) is not { } changeId) return Invalid("changeId", "Required.");
+            if (errors.Count > 0) return Results.ValidationProblem(errors);
+            if (ChangeEndpoints.CheckLinkable(row, no) is { } refused) return refused;
+            var (conn, sqlTx) = Sql(db);
+            var change = await new ChangeStore(conn, sqlTx).GetAsync(changeId, forUpdate: false, ct);
+            if (change is null) return Invalid("changeId", "Unknown change control.");
+            if (WorkflowTransitions.IsFinal(ChangeWorkflow.Definition, change.Status))
+                return Invalid("changeId", $"{change.CcNo} is {change.Status.ToLowerInvariant()}.");
+            await store.UpdateActionAsync(row.Id, no, new Dictionary<string, object?> { ["change_control_id"] = changeId }, ct);
+            return null;
+        }, touch: true, ct);
+
+    private static Task<IResult> UnlinkChange(
+        Guid id, int no, PlatformDbContext db, IGxpContextAccessor gxp, TimeProvider time, ClaimsPrincipal user, HttpContext http, CancellationToken ct) =>
+        Change(id, [CapaWorkflow.Draft, CapaWorkflow.Implementation], $"Action {no} unlinked from its change", db, gxp, time, user, http, async (store, ctx, row, now) =>
+        {
+            var action = row.Actions.FirstOrDefault(a => a.No == no);
+            if (action is null) return Results.NotFound();
+            if (action.Status != CapaActionStatus.Planned)
+                return Problem(StatusCodes.Status409Conflict, "ACTION_NOT_OPEN", "Action not open", $"Action {no} is {action.Status.ToLowerInvariant()}.");
+            if (action.ChangeId is null) return Problem(StatusCodes.Status409Conflict, "NOT_LINKED", "Not linked", $"Action {no} is not linked to a change.");
+            await store.UpdateActionAsync(row.Id, no, new Dictionary<string, object?> { ["change_control_id"] = null }, ct);
+            return null;
+        }, touch: true, ct);
+
     private static Task<IResult> DefineEffectiveness(
         Guid id, JsonObject body, PlatformDbContext db, IGxpContextAccessor gxp, TimeProvider time, ClaimsPrincipal user, HttpContext http, CancellationToken ct) =>
-        Change(id, CapaWorkflow.Draft, "Effectiveness check planned", db, gxp, time, user, http, async (store, ctx, row, now) =>
+        Change(id, [CapaWorkflow.Draft], "Effectiveness check planned", db, gxp, time, user, http, async (store, ctx, row, now) =>
         {
             var errors = new Dictionary<string, string[]>();
             var columns = RequestParsing.Parse(body, CapaWorkflow.EffectivenessFields, requireAll: true, errors);
@@ -231,7 +266,7 @@ public static class CapaEndpoints
 
     private static Task<IResult> RecordEffectiveness(
         Guid id, JsonObject body, PlatformDbContext db, IGxpContextAccessor gxp, TimeProvider time, ClaimsPrincipal user, HttpContext http, CancellationToken ct) =>
-        Change(id, CapaWorkflow.EffectivenessCheck, "Effectiveness check result", db, gxp, time, user, http, async (store, ctx, row, now) =>
+        Change(id, [CapaWorkflow.EffectivenessCheck], "Effectiveness check result", db, gxp, time, user, http, async (store, ctx, row, now) =>
         {
             if (row.Effectiveness is null) return Problem(StatusCodes.Status409Conflict, "NO_CHECK", "No effectiveness check", "The plan has no effectiveness check.");
             var result = body["result"]?.GetValueKind() == JsonValueKind.String ? body["result"]!.GetValue<string>().Trim().ToUpperInvariant() : "";
@@ -277,6 +312,7 @@ public static class CapaEndpoints
             canEditPlan = write && row.Status == CapaWorkflow.Draft,
             canCompleteActions = write && row.Status == CapaWorkflow.Implementation,
             canRecordEffectiveness = write && row.Status == CapaWorkflow.EffectivenessCheck,
+            canLinkChanges = write && row.Status is CapaWorkflow.Draft or CapaWorkflow.Implementation,
             actions = WorkflowTransitions.Available(CapaWorkflow.Definition, row, permissions),
         });
     }
@@ -286,7 +322,7 @@ public static class CapaEndpoints
     /// <paramref name="what"/>) for the audit trail, and, for child records, a version bump of the CAPA so its ETag changes.
     /// </summary>
     private static async Task<IResult> Change(
-        Guid id, string state, string what, PlatformDbContext db, IGxpContextAccessor gxp, TimeProvider time, ClaimsPrincipal user,
+        Guid id, string[] states, string what, PlatformDbContext db, IGxpContextAccessor gxp, TimeProvider time, ClaimsPrincipal user,
         HttpContext http, Func<CapaStore, GxpContext, CapaRow, DateTimeOffset, Task<IResult?>> change, bool touch, CancellationToken ct)
     {
         if (gxp.Current is not { } ctx) return MissingIdentity();
@@ -297,9 +333,9 @@ public static class CapaEndpoints
         var row = await store.GetAsync(id, forUpdate: true, ct);
         if (row is null) return Results.NotFound();
         if (row.RowVersion != expected) return Stale("CAPA");
-        if (row.Status != state)
+        if (!states.Contains(row.Status))
             return Problem(StatusCodes.Status409Conflict, "WRONG_STATE", "Not possible now",
-                $"This can only be done while the CAPA is in {state}; it is in {row.Status}.");
+                $"This can only be done while the CAPA is in {string.Join(" or ", states)}; it is in {row.Status}.");
         // Actions default to the acting user as assignee, and the check records who performed it.
         await new EsigStore(conn, sqlTx).EnsureUserAsync(ctx, user.Login(), user.DisplayName(), user.FindFirst("email")?.Value, ct);
         await WorkflowTransitions.SetChangeReasonAsync(conn, sqlTx, ctx.ChangeReason ?? what, ct);

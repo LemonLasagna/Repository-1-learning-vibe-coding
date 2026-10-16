@@ -16,7 +16,7 @@ const change: ChangeControl = {
   id: 'x1', ccNo: 'CC-2026-00004', siteId: 's1', siteCode: 'BER', title: 'New labeller', description: 'Swap the labeller', justification: 'End of life',
   changeType: 'PLANNED', changeCategory: 'MAJOR', isTemporary: false, temporaryEndDate: null, regulatoryImpact: 'NONE', implementationDue: '2027-01-13',
   effectiveDate: null, ownerId: 'u1', ownerName: 'Quinn Analyst', status: 'ASSESSMENT', rowVersion: 4, updatedAt: '2026-10-15T08:00:00Z',
-  impacts: [], tasks: [],
+  impacts: [], tasks: [], linkedActions: [],
 };
 
 const assessing: ChangeAvailable = {
@@ -76,6 +76,39 @@ describe('Change control screens', () => {
     expect(req.request.body).not.toHaveProperty('temporaryEndDate');
     req.flush(change, { headers: { ETag: '"1"' } });
     expect(navigate).toHaveBeenCalledWith(['/changes', 'x1']);
+  });
+
+  it('raised from a CAPA action it needs no site, is prefilled from the action, and sends the source', async () => {
+    const fixture = TestBed.createComponent(ChangeCreatePage);
+    fixture.componentRef.setInput('capaId', 'c1');
+    fixture.componentRef.setInput('actionNo', '2');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    fixture.detectChanges();
+    http.expectOne('/api/qms/v1/capas/c1').flush({
+      id: 'c1', capaNo: 'CAPA-2026-00003', title: 'Prevent glove tears', rowVersion: 3,
+      actions: [{ no: 2, description: 'Change the glove supplier.', status: 'PLANNED', changeId: null, changeNo: null }],
+    }, { headers: { ETag: '"3"' } });
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('Source: CAPA-2026-00003, action 2');
+    expect(el.querySelector('select[formcontrolname="siteId"]')).toBeNull();
+    button(el, 'Save draft')!.click();
+    const req = http.expectOne('/api/qms/v1/changes');
+    expect(req.request.body).toMatchObject({
+      sourceCapaId: 'c1', sourceActionNo: 2, description: 'Change the glove supplier.',
+      justification: 'Implements CAPA-2026-00003 action 2: Prevent glove tears',
+    });
+    expect(req.request.body).not.toHaveProperty('siteId');
+    req.flush(change, { headers: { ETag: '"1"' } });
+    expect(navigate).toHaveBeenCalledWith(['/changes', 'x1']);
+  });
+
+  it('shows the CAPA actions implemented through the change, linked to their CAPA', async () => {
+    const { el } = await renderDetail(owner, {
+      ...change, linkedActions: [{ capaId: 'c1', capaNo: 'CAPA-2026-00003', actionNo: 2, description: 'Change the glove supplier.', status: 'PLANNED' }],
+    }, assessing);
+    expect(el.textContent).toContain('CAPA actions implemented through this change');
+    expect(el.querySelector('section[aria-labelledby="linked-title"] a')?.getAttribute('href')).toBe('/capas/c1');
   });
 
   async function renderDetail(user: SessionUser, c: ChangeControl, available: ChangeAvailable) {

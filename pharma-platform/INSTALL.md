@@ -179,7 +179,7 @@ PHARMAOS_TEST_PG="Host=localhost;Username=postgres;Password=postgres" \
 ```
 
 The integration tests create and then drop their own throw-away database (`pharmaos_it_…`). They do
-not touch `pharmaos_dev`. Expected: 96 unit tests and 67 integration tests pass.
+not touch `pharmaos_dev`. Expected: 96 unit tests and 71 integration tests pass.
 
 ### A5. Start Keycloak and run the backend
 
@@ -238,7 +238,7 @@ curl -i http://localhost:5080/api/mdm/v1/uoms | head -1   # HTTP/1.1 401 Unautho
 ```bash
 cd web
 npm ci                                   # exact versions from package-lock.json
-npx ng test --watch=false                # expect: 95 passed
+npx ng test --watch=false                # expect: 99 passed
 npx ng build                             # production build with strict template checks
 npx ng serve                             # http://localhost:4200
 ```
@@ -270,6 +270,9 @@ npx ng serve                             # http://localhost:4200
   and closed until `qa.approver` has signed **Approve plan ✍**. Then complete each action with evidence, have QA
   sign **Verify implementation ✍**, record the effectiveness result, and have QA sign **Verify effectiveness and
   close ✍**.
+- **Change from a CAPA action**: on a CAPA in Draft plan or Implementation, press **Raise change** on an open action. The change form
+  takes the CAPA's site and is filled from the action; once saved, the action shows the change number and the change lists the
+  action. **Link change…** attaches an existing open change instead, **Unlink change** removes the link.
 - **Change control**: as `qa.analyst`, **Change control → New change**, choose site BER, describe the change and why, and save
   the draft; **Submit for assessment**. Record impact assessments (one per area; with a major regulatory impact the
   regulatory area is needed too), plan at least one task, and **Submit for approval**. As `qa.approver`, find it in "My work",
