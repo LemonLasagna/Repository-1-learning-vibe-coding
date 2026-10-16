@@ -92,6 +92,28 @@ jobs:
       - name: Production build (strict templates)
         run: npx ng build
 
+  licence:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pharma-platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: pharma-platform/web/package-lock.json
+      - run: npm ci
+        working-directory: pharma-platform/web
+      - name: Install the CycloneDX SBOM tool
+        run: dotnet tool install --global CycloneDX
+      - name: Build the SBOMs and check every licence against the allow-list
+        run: python3 tools/sbom_licence_check.py
+
   installer:
     runs-on: ubuntu-latest
     services:
@@ -159,6 +181,8 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: pharma-platform/web/package-lock.json
+      - name: Backup and restore reproduces the database (schema, every row, audit trail)
+        run: PGPASSWORD=postgres tools/backup_restore_test.sh pharmaos_ci localhost 5432 postgres
       - name: Start Keycloak with the development realm
         run: docker compose -f deploy/keycloak/docker-compose.dev.yml up -d
       - name: Create the database with the demo organisation (installer, no frontend, no smoke check)

@@ -89,3 +89,9 @@ main {
 
   &.late { background: var(--pos-danger); }
 }
+
+.shell-footer {
+  margin: 32px 16px 16px;
+  font-size: 0.8rem;
+  color: var(--pos-muted);
+}

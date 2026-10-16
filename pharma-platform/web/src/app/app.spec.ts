@@ -55,4 +55,12 @@ describe('App shell', () => {
     out.click();
     expect(navigations).toEqual(['/bff/logout?sid=abc']);
   });
+
+  it('shows the license and a link to the corresponding source on every page', async () => {
+    const { el } = await render('DEV', null);
+    const footer = el.querySelector('footer.shell-footer')!;
+    expect(footer.textContent).toContain('GNU Affero General Public License v3.0');
+    const source = footer.querySelector('a[href^="https://github.com/"]') as HTMLAnchorElement;
+    expect(source.href).toBe('https://github.com/LemonLasagna/Repository-1-learning-vibe-coding');
+  });
 });
