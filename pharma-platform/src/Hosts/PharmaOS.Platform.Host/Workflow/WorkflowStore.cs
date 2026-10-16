@@ -44,15 +44,51 @@ public sealed class WorkflowStore(NpgsqlConnection conn, NpgsqlTransaction tx)
         await using var get = Cmd("SELECT id FROM wf.process_definition WHERE code = @code");
         get.Parameters.AddWithValue("code", def.Code);
         var definitionId = (Guid)(await get.ExecuteScalarAsync(ct))!;
-        await WriteVersionAsync(ctx, definitionId, def, ct);
+        if (await WriteVersionAsync(ctx, definitionId, def, ct))
+            await CancelDraftsAsync(ctx, def, ct);
         return definitionId;
+    }
+
+    /// <summary>
+    /// A release from code takes its version number, so a draft that was aiming for the same number can no longer be activated.
+    /// It is cancelled (audited) rather than left to fail at activation. An already active authored version is not touched.
+    /// </summary>
+    private async Task CancelDraftsAsync(GxpContext ctx, WorkflowDefinition def, CancellationToken ct)
+    {
+        await WorkflowTransitions.SetChangeReasonAsync(conn, tx, $"Workflow {def.Code} v{def.Version} released from code", ct);
+        await using (var cmd = Cmd("""
+            UPDATE wf.workflow_draft SET status = 'CANCELLED', decision_comment = @comment
+             WHERE code = @code AND version_no = @version AND status NOT IN ('ACTIVE', 'CANCELLED')
+            """))
+        {
+            cmd.Parameters.AddWithValue("code", def.Code);
+            cmd.Parameters.AddWithValue("version", def.Version);
+            cmd.Parameters.AddWithValue("comment", $"Version {def.Version} was released from code.");
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        await WorkflowTransitions.SetChangeReasonAsync(conn, tx, ctx.ChangeReason, ct);
+    }
+
+    /// <summary>
+    /// The definition new records start on: the newest released version, which is an activated authored version when one is newer
+    /// than the code's release. Falls back to <paramref name="release"/> when nothing is stored.
+    /// </summary>
+    public async Task<WorkflowDefinition> CurrentAsync(Guid definitionId, WorkflowDefinition release, CancellationToken ct)
+    {
+        await using var cmd = Cmd("""
+            SELECT snapshot::text FROM wf.process_definition_version
+             WHERE entity_id = @id ORDER BY version_no DESC LIMIT 1
+            """);
+        cmd.Parameters.AddWithValue("id", definitionId);
+        return await cmd.ExecuteScalarAsync(ct) is string snapshot ? FromModel(JsonNode.Parse(snapshot)!.AsObject()) : release;
     }
 
     /// <summary>
     /// Stores version N of a definition the first time it is released. A released version never changes (URS-WF-005):
     /// releasing different content under the same number is refused, so a change needs a new version number.
     /// </summary>
-    public async Task WriteVersionAsync(GxpContext ctx, Guid definitionId, WorkflowDefinition def, CancellationToken ct)
+    /// <returns>True when the version was stored now, false when the same content was already stored.</returns>
+    public async Task<bool> WriteVersionAsync(GxpContext ctx, Guid definitionId, WorkflowDefinition def, CancellationToken ct)
     {
         var model = ModelObject(def);
         var hash = CanonicalJson.Sha256Hex(model);
@@ -65,7 +101,7 @@ public sealed class WorkflowStore(NpgsqlConnection conn, NpgsqlTransaction tx)
                 if (released != hash)
                     throw new InvalidOperationException(
                         $"Workflow {def.Code} version {def.Version} is already released with different content. A changed workflow needs a new version number.");
-                return;
+                return false;
             }
         }
         await using var insert = Cmd("""
@@ -81,6 +117,7 @@ public sealed class WorkflowStore(NpgsqlConnection conn, NpgsqlTransaction tx)
         insert.Parameters.AddWithValue("hash", hash);
         insert.Parameters.AddWithValue("user", ctx.UserId);
         await insert.ExecuteNonQueryAsync(ct);
+        return true;
     }
 
     /// <summary>The definition an instance started on, as stored in its version (URS-WF-005).</summary>

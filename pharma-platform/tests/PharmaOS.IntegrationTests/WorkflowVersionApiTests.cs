@@ -91,7 +91,7 @@ public sealed class WorkflowVersionApiTests : IClassFixture<PostgresFixture>, ID
     }
 
     [Fact]
-    public async Task A_record_in_progress_keeps_the_transitions_of_the_version_it_started_on_and_new_records_still_start()
+    public async Task A_record_in_progress_keeps_the_transitions_of_the_version_it_started_on_and_new_records_start_on_the_newest()
     {
         var path = await CapaAsync();
         await ReleaseCapaVersionTwoAsync();
@@ -103,10 +103,10 @@ public sealed class WorkflowVersionApiTests : IClassFixture<PostgresFixture>, ID
         Assert.Equal(HttpStatusCode.OK, submit.StatusCode);
         Assert.Equal("PLAN_REVIEW", (await As(Planner).GetFromJsonAsync<JsonElement>(path)).GetProperty("status").GetString());
 
-        // A record raised now starts on the release that the code defines (version 1), which is already stored: no conflict.
+        // A record raised now starts on the newest released version: version 2, where only cancelling is possible.
         var next = await CapaAsync();
-        Assert.Contains(
-            (await As(Planner).GetFromJsonAsync<JsonElement>($"{next}/available-actions")).GetProperty("actions").EnumerateArray(),
-            a => a.GetProperty("action").GetString() == "submit_plan");
+        var nextActions = (await As(Planner).GetFromJsonAsync<JsonElement>($"{next}/available-actions")).GetProperty("actions")
+            .EnumerateArray().Select(a => a.GetProperty("action").GetString()).ToList();
+        Assert.Equal(["cancel"], nextActions);
     }
 }

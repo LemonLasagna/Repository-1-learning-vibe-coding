@@ -113,7 +113,7 @@ public static class ChangeEndpoints
         var definitionId = await wf.EnsureDefinitionAsync(ctx, ChangeWorkflow.Definition, "Change control (standard)", entityDefinitionId, ct);
         var id = Guid.CreateVersion7();
         var number = await store.NextNumberAsync(ctx, now.UtcDateTime.Year, ct);
-        var instance = await wf.StartInstanceAsync(ctx, definitionId, ChangeWorkflow.Definition, entityDefinitionId, number, id, now, ct);
+        var instance = await wf.StartInstanceAsync(ctx, definitionId, await wf.CurrentAsync(definitionId, ChangeWorkflow.Definition, ct), entityDefinitionId, number, id, now, ct);
         header.TryAdd("implementation_due", DateOnly.FromDateTime(now.UtcDateTime).AddDays(ChangeWorkflow.DefaultDueDays));
         header.TryAdd("regulatory_impact", "NONE");
         header["site_id"] = siteId;

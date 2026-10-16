@@ -680,6 +680,12 @@ erDiagram
     jsonb transitions
     varchar status
     jsonb validation_errors
+    uuid submitted_by
+    timestamptz submitted_at
+    uuid approved_by
+    timestamptz approved_at
+    varchar decision_comment
+    timestamptz activated_at
   }
   approval_route_template {
     varchar code UK

@@ -124,7 +124,7 @@ public static class CapaEndpoints
         var definitionId = await wf.EnsureDefinitionAsync(ctx, CapaWorkflow.Definition, "CAPA (standard)", entityDefinitionId, ct);
         var id = Guid.CreateVersion7();
         var number = await store.NextNumberAsync(ctx, now.UtcDateTime.Year, ct);
-        var instance = await wf.StartInstanceAsync(ctx, definitionId, CapaWorkflow.Definition, entityDefinitionId, number, id, now, ct);
+        var instance = await wf.StartInstanceAsync(ctx, definitionId, await wf.CurrentAsync(definitionId, CapaWorkflow.Definition, ct), entityDefinitionId, number, id, now, ct);
         header.TryAdd("due_date", DateOnly.FromDateTime(now.UtcDateTime).AddDays(CapaWorkflow.DefaultDueDays));
         header["site_id"] = siteId;
         header["source_type"] = sourceType;

@@ -97,7 +97,7 @@ custom_entity_record W | entity_definition_id:>meta.entity_definition!, record_n
 process_definition V | code:c!*, name:s!, entity_definition_id:>meta.entity_definition, bpmn_xml:t!, model_json:j!, status:st!, is_gxp:bool!
 process_node | process_definition_id:>wf.process_definition!, node_key:c!, node_type:st!, name:s!, config:j | U(process_definition_id,node_key)
 process_transition | process_definition_id:>wf.process_definition!, from_node_id:>wf.process_node!, to_node_id:>wf.process_node!, condition_expr:t, requires_esig:bool!, esig_meaning_id:>esig.signature_meaning, sort_order:i
-workflow_draft | code:c!, version_no:i!, initial_state:c!, transitions:j!, status:st!, validation_errors:j | U(code,version_no)
+workflow_draft | code:c!, version_no:i!, initial_state:c!, transitions:j!, status:st!, validation_errors:j, submitted_by:u, submitted_at:ts, approved_by:u, approved_at:ts, decision_comment:l, activated_at:ts | U(code,version_no)
 approval_route_template V | code:c!*, name:s!, mode:st!, quorum:i, config:j
 approval_route_step | route_template_id:>wf.approval_route_template!, step_no:i!, mode:st!, assignee_rule:j!, min_approvals:i!, due_in:dur, esig_meaning_id:>esig.signature_meaning
 process_instance | process_definition_id:>wf.process_definition!, definition_version:c!, entity_definition_id:>meta.entity_definition, business_key:c!, record_id:u!, status:st!, started_at:ts!, completed_at:ts, started_by:>iam.app_user!

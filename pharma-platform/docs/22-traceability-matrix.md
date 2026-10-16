@@ -52,7 +52,7 @@ generated from the tests instead.
 | URS-WF-002 | Support rejection loops back to any prior configured step, with loop counters | M · Y · M | — |
 | URS-WF-003 | Support time-based escalation with multiple levels and business calendars | M · N · M | — |
 | URS-WF-004 | Support delegation (planned out-of-office and per-task) with audit of on-behalf-of | M · Y · H | — |
-| URS-WF-005 | Workflow definitions in use by running instances shall not change; instances complete on the version they started on | M · Y · H | `WorkflowAuthoringApiTests (8 tests)`<br>`WorkflowVersionApiTests (1 tests)` |
+| URS-WF-005 | Workflow definitions in use by running instances shall not change; instances complete on the version they started on | M · Y · H | `WorkflowActivationApiTests (2 tests)`<br>`WorkflowAuthoringApiTests (14 tests)`<br>`WorkflowVersionApiTests (1 tests)` |
 | URS-WF-006 | Provide a simulation mode for configured workflows | H · N · L | — |
 
 ## 8.4 Security (SEC)

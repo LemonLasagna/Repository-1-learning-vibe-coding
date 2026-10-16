@@ -702,6 +702,12 @@
 | transitions | jsonb | N |  |
 | status | varchar(30) | N |  |
 | validation_errors | jsonb | Y |  |
+| submitted_by | uuid | Y |  |
+| submitted_at | timestamptz | Y |  |
+| approved_by | uuid | Y |  |
+| approved_at | timestamptz | Y |  |
+| decision_comment | varchar(1000) | Y |  |
+| activated_at | timestamptz | Y |  |
 | _unique_ | (code, version_no) | | |
 
 ### `wf.approval_route_template`  (flags: V; audited)

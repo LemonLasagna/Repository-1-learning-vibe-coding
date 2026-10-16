@@ -33,7 +33,9 @@ builder.Services.AddAuthorizationBuilder()
     .AddPermissionPolicy(Permissions.CapaWrite)
     .AddPermissionPolicy(Permissions.ChangeRead)
     .AddPermissionPolicy(Permissions.ChangeWrite)
-    .AddPermissionPolicy(Permissions.WorkflowAuthor);
+    .AddPermissionPolicy(Permissions.WorkflowAuthor)
+    .AddPermissionPolicy(Permissions.WorkflowApprove);
+builder.Services.Configure<WorkflowAuthoringOptions>(builder.Configuration.GetSection(WorkflowAuthoringOptions.Section));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ISignableSource, UomSignable>();
 builder.Services.AddSingleton<ISignableSource, DeviationSignable>();

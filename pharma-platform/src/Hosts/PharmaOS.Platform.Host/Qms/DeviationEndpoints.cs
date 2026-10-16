@@ -72,7 +72,7 @@ public static class DeviationEndpoints
         var definitionId = await wf.EnsureDefinitionAsync(ctx, DeviationWorkflow.Definition, "Deviation (standard)", entityDefinitionId, ct);
         var id = Guid.CreateVersion7();
         var number = await store.NextNumberAsync(ctx, now.UtcDateTime.Year, ct);
-        var instance = await wf.StartInstanceAsync(ctx, definitionId, DeviationWorkflow.Definition, entityDefinitionId, number, id, now, ct);
+        var instance = await wf.StartInstanceAsync(ctx, definitionId, await wf.CurrentAsync(definitionId, DeviationWorkflow.Definition, ct), entityDefinitionId, number, id, now, ct);
         var extObject = new JsonObject();
         foreach (var (k, v) in ext.Where(e => e.Value is not null)) extObject[k] = v!.DeepClone();
         await store.InsertAsync(ctx, id, number, instance, DeviationWorkflow.Draft, columns, extObject, ct);
