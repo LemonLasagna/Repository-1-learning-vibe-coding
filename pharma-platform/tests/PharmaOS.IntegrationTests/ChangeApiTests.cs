@@ -175,6 +175,7 @@ public sealed class ChangeApiTests : IClassFixture<PostgresFixture>, IDisposable
     }
 
     [Fact]
+    [Trait("Req", "URS-QMS-011")]
     public async Task Full_lifecycle_with_return_signatures_tasks_and_the_post_implementation_review()
     {
         // The assignee must be known to PharmaOS: they have used it once.
@@ -237,6 +238,7 @@ public sealed class ChangeApiTests : IClassFixture<PostgresFixture>, IDisposable
     }
 
     [Fact]
+    [Trait("Req", "URS-QMS-011")]
     public async Task A_change_with_no_task_cannot_be_verified_as_implemented()
     {
         var id = await CreateAsync(Owner);
@@ -249,6 +251,7 @@ public sealed class ChangeApiTests : IClassFixture<PostgresFixture>, IDisposable
     }
 
     [Fact]
+    [Trait("Req", "URS-SEC-013")]
     public async Task Nobody_approves_or_verifies_their_own_work_whatever_their_roles()
     {
         var id = await SubmittedAsync(Both);
@@ -262,6 +265,7 @@ public sealed class ChangeApiTests : IClassFixture<PostgresFixture>, IDisposable
     }
 
     [Fact]
+    [Trait("Req", "URS-SEC-012")]
     public async Task Cancelling_is_signed_needs_a_reason_and_belongs_to_QA_once_submitted()
     {
         var draft = await CreateAsync(Owner);
@@ -278,6 +282,7 @@ public sealed class ChangeApiTests : IClassFixture<PostgresFixture>, IDisposable
     }
 
     [Fact]
+    [Trait("Req", "URS-DI-009")]
     public async Task Changes_need_the_current_version_and_the_write_permission()
     {
         var id = await CreateAsync(Owner);

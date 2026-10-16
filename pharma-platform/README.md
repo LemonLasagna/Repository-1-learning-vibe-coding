@@ -17,6 +17,7 @@ anything, open the repository in GitHub Codespaces (INSTALL.md, "Quickest path")
 | `docs/01…21` | The 20 requested deliverables plus the API architecture | Design-level |
 | `database/model/catalog.dsl` | **Single source of truth** for the data model: 446 entities in 23 bounded contexts | Authoritative |
 | `tools/schema_gen.py` | Generates DDL, ERD, and data dictionary from the catalog | Executable |
+| `tools/rtm_gen.py` | Generates the requirements traceability matrix ([22](docs/22-traceability-matrix.md)) from the URS and the tests | Executable |
 | `database/schema/*.sql` | PostgreSQL 16 DDL: 487 physical tables, 927 FKs, audit triggers, RLS | **Applies cleanly on PG 16** |
 | `database/tests/integrity_tests.sql` | Executable data-integrity controls (OQ-DI-001…009) | **9/9 pass** |
 | `database/data-dictionary.md` | Column-level dictionary (generated) | Generated |
@@ -31,6 +32,7 @@ anything, open the repository in GitHub Codespaces (INSTALL.md, "Quickest path")
 ```bash
 python3 tools/schema_gen.py            # regenerate DDL + ERD + dictionary
 python3 tools/schema_gen.py --check    # CI: fail if generated files are stale
+python3 tools/rtm_gen.py               # regenerate the traceability matrix after tagging tests (--check in CI)
 for f in database/schema/0*.sql; do psql -v ON_ERROR_STOP=1 -d pharmaos -f "$f"; done
 psql -v ON_ERROR_STOP=1 -d pharmaos -f database/tests/integrity_tests.sql
 dotnet test tests/PharmaOS.UnitTests                         # no database needed
@@ -53,7 +55,7 @@ cd web && npm ci && npx ng test --watch=false && npx ng build   # Node 24 LTS (A
 | 8 | [User Requirement Specification](docs/08-urs.md) | 18 | [DevOps Structure](docs/18-devops.md) |
 | 9 | [Functional Specification](docs/09-functional-specification.md) | 19 | [Kubernetes Deployment](docs/19-kubernetes-deployment.md) |
 | 10 | [Design Specification](docs/10-design-specification.md) | 20 | [Product Roadmap](docs/20-product-roadmap.md) |
-| — | [API Architecture](docs/21-api-architecture.md) | | |
+| — | [API Architecture](docs/21-api-architecture.md) | — | [Requirements Traceability Matrix](docs/22-traceability-matrix.md) (generated) |
 
 ## Design positions that depart from the brief
 
