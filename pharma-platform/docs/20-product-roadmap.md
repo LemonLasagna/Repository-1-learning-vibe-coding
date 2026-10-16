@@ -51,10 +51,10 @@
 | Regulatory guidance revisions (Annex 11 revision, CSA) | Regulatory intelligence feed → requirement updates → release planning |
 | Customer validation cost blocks adoption | Vendor validation package, automated customer regression subset, risk-based leverage |
 
-## 20.5 Open-source and self-hosting decisions still open
+## 20.5 Open-source and self-hosting decisions
 
 | Decision | Options | Note |
 |---|---|---|
-| Licence of the PharmaOS code itself | Apache 2.0 (open core + paid validation package and support), AGPL-3.0 (stronger copyleft), or source-available | Drives the business model; decide before the first external release |
-| Paid offering if the code is open | Validation package, segment packs, support/SLA, upgrades with regression evidence | The validation evidence is usually what regulated customers pay for |
+| Licence of the PharmaOS code itself | **Decided: AGPL-3.0** (recorded [date]). Apache 2.0 and source-available were considered | Consequences: a modified version offered to users over a network must offer those users its source (the UI needs a source link); dependency licences must be compatible with AGPL-3.0 (SBOM check, IQ-INF-014); a commercial licence for organisations that cannot accept AGPL is a later option, not yet decided |
+| Paid offering if the code is open | **Decided: validation package and support/SLA** (segment packs and upgrades with regression evidence later). The validation evidence is usually what regulated customers pay for | A vendor-sold validation package needs independent review to be credible; see the customer statement |
 | Single-tenant only vs keep multi-tenant capability | Keep it (as now) | Costs little and serves group companies and CMOs |
