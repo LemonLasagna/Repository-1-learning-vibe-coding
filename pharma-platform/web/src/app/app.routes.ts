@@ -62,5 +62,15 @@ export const routes: Routes = [
     title: 'Change control · PharmaOS',
     loadComponent: () => import('./features/change/change-pages').then((m) => m.ChangeDetailPage),
   },
+  {
+    path: 'workflows',
+    title: 'Workflows · PharmaOS',
+    loadComponent: () => import('./features/workflow/workflow-pages').then((m) => m.WorkflowListPage),
+  },
+  {
+    path: 'workflows/:id',
+    title: 'Workflow draft · PharmaOS',
+    loadComponent: () => import('./features/workflow/workflow-pages').then((m) => m.WorkflowDetailPage),
+  },
   { path: '**', redirectTo: 'inbox' },
 ];

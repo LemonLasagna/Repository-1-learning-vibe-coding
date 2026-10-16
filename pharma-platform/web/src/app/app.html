@@ -8,6 +8,7 @@
     <a routerLink="/deviations" routerLinkActive="active">Deviations</a>
     <a routerLink="/capas" routerLinkActive="active">CAPA</a>
     <a routerLink="/changes" routerLinkActive="active">Change control</a>
+    @if (auth.hasPermission('wf.definition:author')) {<a routerLink="/workflows" routerLinkActive="active">Workflows</a>}
   </nav>
   @if (auth.user(); as u) {
     <span class="who" title="Signed in as {{ u.login }}">{{ u.name ?? u.login }}</span>

@@ -11,7 +11,7 @@ apply to PostgreSQL 16 or the integrity tests fail.
 | Business entities | 446 | `010_tables.sql` |
 | Version snapshot tables | 37 | `020_versions.sql` |
 | Audit tables | 4 (`audit_trail` partitioned + default partition, `audit_seal`, `audit_trail_review`) | `000_foundation.sql` |
-| **Physical tables** | **487** | applies cleanly on PG 16.15 |
+| **Physical tables** | **488** | applies cleanly on PG 16.15 |
 | Foreign keys | 927 | `030_foreign_keys.sql` |
 | Schemas | 23 + `audit` | — |
 

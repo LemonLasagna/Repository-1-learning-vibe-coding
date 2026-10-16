@@ -336,6 +336,11 @@ CREATE TRIGGER trg_audit AFTER INSERT OR UPDATE OR DELETE ON wf.process_transiti
 CREATE TRIGGER trg_no_delete BEFORE DELETE ON wf.process_transition FOR EACH ROW EXECUTE FUNCTION audit.fn_block_delete();
 ALTER TABLE wf.process_transition ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON wf.process_transition USING (tenant_id = audit.ctx('tenant_id')::uuid) WITH CHECK (tenant_id = audit.ctx('tenant_id')::uuid);
+CREATE TRIGGER trg_touch BEFORE UPDATE ON wf.workflow_draft FOR EACH ROW EXECUTE FUNCTION audit.fn_touch();
+CREATE TRIGGER trg_audit AFTER INSERT OR UPDATE OR DELETE ON wf.workflow_draft FOR EACH ROW EXECUTE FUNCTION audit.fn_row_audit();
+CREATE TRIGGER trg_no_delete BEFORE DELETE ON wf.workflow_draft FOR EACH ROW EXECUTE FUNCTION audit.fn_block_delete();
+ALTER TABLE wf.workflow_draft ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON wf.workflow_draft USING (tenant_id = audit.ctx('tenant_id')::uuid) WITH CHECK (tenant_id = audit.ctx('tenant_id')::uuid);
 CREATE TRIGGER trg_touch BEFORE UPDATE ON wf.approval_route_template FOR EACH ROW EXECUTE FUNCTION audit.fn_touch();
 CREATE TRIGGER trg_audit AFTER INSERT OR UPDATE OR DELETE ON wf.approval_route_template FOR EACH ROW EXECUTE FUNCTION audit.fn_row_audit();
 CREATE TRIGGER trg_no_delete BEFORE DELETE ON wf.approval_route_template FOR EACH ROW EXECUTE FUNCTION audit.fn_block_delete();

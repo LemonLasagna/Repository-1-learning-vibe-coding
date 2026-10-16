@@ -271,8 +271,10 @@ done
 rm -f "$ROOT/.install-psql.err"
 TABLES="$(psql_su -d "$DB_NAME" -qAtc "SELECT count(*) FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('pg_catalog','information_schema')")"
 ok "$TABLES tables"
-record "IQ-INF-004b" "Physical tables created" "487" "$TABLES" "$( [[ "$TABLES" == 487 ]] && echo PASS || echo FAIL)"
-[[ "$TABLES" == 487 ]] || die "Expected 487 tables, found $TABLES."
+# Expected: every table the schema files declare (step 3 checked they match the data model).
+EXPECTED_TABLES="$(cat database/schema/0*.sql | grep -c '^CREATE TABLE')"
+record "IQ-INF-004b" "Physical tables created" "$EXPECTED_TABLES" "$TABLES" "$( [[ "$TABLES" == "$EXPECTED_TABLES" ]] && echo PASS || echo FAIL)"
+[[ "$TABLES" == "$EXPECTED_TABLES" ]] || die "Expected $EXPECTED_TABLES tables, found $TABLES."
 
 # ------------------------------------------------- 5. integrity + checks ---
 step "5/8 Data-integrity tests and installation checks"

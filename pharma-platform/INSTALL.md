@@ -123,7 +123,7 @@ Set your superuser connection once per terminal (change the password to yours):
 export PGHOST=localhost PGUSER=postgres PGPASSWORD=postgres
 ```
 
-Create the database and load the schema. This creates 487 tables, triggers and row-level security:
+Create the database and load the schema. This creates 488 tables, triggers and row-level security:
 
 ```bash
 psql -c "CREATE DATABASE pharmaos_dev"

@@ -100,6 +100,14 @@
         {
           "name": "qms.change:approve",
           "description": "PharmaOS permission qms.change:approve (QA: approve or return the change, verify the implementation, close, cancel after submission)"
+        },
+        {
+          "name": "wf.definition:author",
+          "description": "PharmaOS permission wf.definition:author (draft, validate and submit workflow definitions)"
+        },
+        {
+          "name": "wf.definition:approve",
+          "description": "PharmaOS permission wf.definition:approve (approve, reject and activate submitted workflow definitions)"
         }
       ]
     }
@@ -269,7 +277,9 @@
           "qms.capa:read",
           "qms.capa:approve",
           "qms.change:read",
-          "qms.change:approve"
+          "qms.change:approve",
+          "wf.definition:author",
+          "wf.definition:approve"
         ]
       }
     }
