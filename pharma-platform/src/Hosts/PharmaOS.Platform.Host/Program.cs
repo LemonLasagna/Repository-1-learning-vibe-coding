@@ -29,13 +29,17 @@ builder.Services.AddAuthorizationBuilder()
     .AddPermissionPolicy(Permissions.DeviationRead)
     .AddPermissionPolicy(Permissions.DeviationWrite)
     .AddPermissionPolicy(Permissions.CapaRead)
-    .AddPermissionPolicy(Permissions.CapaWrite);
+    .AddPermissionPolicy(Permissions.CapaWrite)
+    .AddPermissionPolicy(Permissions.ChangeRead)
+    .AddPermissionPolicy(Permissions.ChangeWrite);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ISignableSource, UomSignable>();
 builder.Services.AddSingleton<ISignableSource, DeviationSignable>();
 builder.Services.AddSingleton<ISignableSource, CapaSignable>();
+builder.Services.AddSingleton<ISignableSource, ChangeSignable>();
 builder.Services.AddSingleton<IInboxSource, DeviationInbox>();
 builder.Services.AddSingleton<IInboxSource, CapaInbox>();
+builder.Services.AddSingleton<IInboxSource, ChangeInbox>();
 builder.Services.AddSingleton<SignableRegistry>();
 
 // Connection strings are resolved lazily so test hosts and environments can override them.
@@ -66,6 +70,7 @@ app.MapAuditEndpoints();
 app.MapEsigEndpoints();
 app.MapDeviationEndpoints();
 app.MapCapaEndpoints();
+app.MapChangeEndpoints();
 app.MapInboxEndpoints();
 
 app.Run();

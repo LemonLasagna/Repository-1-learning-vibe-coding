@@ -13,17 +13,18 @@ public sealed class InboxApiTests : IClassFixture<PostgresFixture>, IDisposable
     private static readonly Guid Berlin = Guid.Parse("d0000000-0000-4000-8000-000000000010");
 
     private static readonly TestUser Owner = new(Guid.Parse("e1111111-0000-0000-0000-000000000001"), Tenant, "Oona Owner", "i.owner",
-        Permissions.DeviationRead, Permissions.DeviationWrite, Permissions.CapaRead, Permissions.CapaWrite, Permissions.EsigSign);
+        Permissions.DeviationRead, Permissions.DeviationWrite, Permissions.CapaRead, Permissions.CapaWrite, Permissions.ChangeRead,
+        Permissions.ChangeWrite, Permissions.EsigSign);
     private static readonly TestUser Qa = new(Guid.Parse("e2222222-0000-0000-0000-000000000002"), Tenant, "Quill QA", "i.qa",
         Permissions.DeviationRead, Permissions.DeviationTriage, Permissions.DeviationApprove, Permissions.CapaRead, Permissions.CapaApprove,
-        Permissions.EsigSign);
+        Permissions.ChangeRead, Permissions.ChangeApprove, Permissions.EsigSign);
     private static readonly TestUser Both = new(Guid.Parse("e3333333-0000-0000-0000-000000000003"), Tenant, "Bo Both", "i.both",
         Permissions.DeviationRead, Permissions.DeviationWrite, Permissions.DeviationTriage, Permissions.DeviationApprove, Permissions.CapaRead,
-        Permissions.CapaWrite, Permissions.EsigSign);
+        Permissions.CapaWrite, Permissions.ChangeRead, Permissions.ChangeWrite, Permissions.ChangeApprove, Permissions.EsigSign);
     private static readonly TestUser Assignee = new(Guid.Parse("e4444444-0000-0000-0000-000000000004"), Tenant, "Ari Assignee", "i.assignee",
-        Permissions.CapaRead, Permissions.CapaWrite);
+        Permissions.CapaRead, Permissions.CapaWrite, Permissions.ChangeRead, Permissions.ChangeWrite);
     private static readonly TestUser Reader = new(Guid.Parse("e5555555-0000-0000-0000-000000000005"), Tenant, "Ray Reader", "i.reader",
-        Permissions.DeviationRead, Permissions.CapaRead);
+        Permissions.DeviationRead, Permissions.CapaRead, Permissions.ChangeRead);
 
     private readonly PostgresFixture _db;
     private readonly PlatformFactory _factory;
@@ -61,7 +62,12 @@ public sealed class InboxApiTests : IClassFixture<PostgresFixture>, IDisposable
 
     private async Task SignAsync(TestUser user, string entity, Guid id, string action, string meaning)
     {
-        var path = entity == "qms.capa" ? $"/api/qms/v1/capas/{id}" : $"/api/qms/v1/deviations/{id}";
+        var path = entity switch
+        {
+            "qms.capa" => $"/api/qms/v1/capas/{id}",
+            "qms.change" => $"/api/qms/v1/changes/{id}",
+            _ => $"/api/qms/v1/deviations/{id}",
+        };
         var challenge = await As(user).PostAsJsonAsync("/api/esig/v1/challenges",
             new { entity, recordId = id, recordVersion = await Version(path), meaning, acknowledge = true, action });
         Assert.Equal(HttpStatusCode.Created, challenge.StatusCode);
@@ -151,6 +157,72 @@ public sealed class InboxApiTests : IClassFixture<PostgresFixture>, IDisposable
         Assert.Equal("Verify effectiveness and close", Task(Assert.Single(await InboxAsync(Qa, id))));
         await SignAsync(Qa, "qms.capa", id, "close", "VERIFIED");
         Assert.Empty(await InboxAsync(Qa, id));
+    }
+
+    [Fact]
+    public async Task Change_items_follow_assessment_approval_implementation_review_and_closure()
+    {
+        await As(Assignee).PostAsJsonAsync("/api/qms/v1/changes", new
+            { siteId = Berlin, title = "Known user", description = "d", justification = "j", changeType = "PLANNED", changeCategory = "MINOR" });
+        var res = await As(Owner).PostAsJsonAsync("/api/qms/v1/changes", new
+        {
+            siteId = Berlin, title = "Inbox change", description = "d", justification = "j", changeType = "PLANNED", changeCategory = "MAJOR",
+        });
+        var id = (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        var path = $"/api/qms/v1/changes/{id}";
+        Assert.Equal("Complete the description and submit for assessment", Task(Assert.Single(await InboxAsync(Owner, id))));
+        Assert.Empty(await InboxAsync(Qa, id));
+
+        await SendAsync(Owner, HttpMethod.Post, $"{path}/transitions", path, new { action = "submit" });
+        Assert.Equal("Assess the impact, plan the tasks, then submit for approval", Task(Assert.Single(await InboxAsync(Owner, id))));
+        await SendAsync(Owner, HttpMethod.Put, $"{path}/impacts/QUALITY", path, new { isImpacted = true, assessment = "Needs qualification." });
+        await SendAsync(Owner, HttpMethod.Post, $"{path}/tasks", path,
+            new { phase = "IMPLEMENTATION", description = "Qualify the labeller", assigneeId = Assignee.Sub, dueDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(10).ToString("yyyy-MM-dd") });
+        await SendAsync(Owner, HttpMethod.Post, $"{path}/transitions", path, new { action = "submit_for_approval" });
+        Assert.Empty(await InboxAsync(Owner, id));
+        Assert.Equal("Review and approve the change", Task(Assert.Single(await InboxAsync(Qa, id))));
+
+        await SignAsync(Qa, "qms.change", id, "approve", "APPROVED");
+        Assert.Empty(await InboxAsync(Qa, id));
+        Assert.Equal("Set the effective date", Task(Assert.Single(await InboxAsync(Owner, id))));
+        var task = Assert.Single(await InboxAsync(Assignee, id));
+        Assert.Equal("Complete task 1", Task(task));
+        Assert.Equal("Qualify the labeller", task.GetProperty("detail").GetString());
+
+        await SendAsync(Assignee, HttpMethod.Post, $"{path}/tasks/1/complete", path, null);
+        Assert.Empty(await InboxAsync(Assignee, id));
+        Assert.Empty(await InboxAsync(Qa, id));
+        await SendAsync(Owner, HttpMethod.Patch, $"{path}/implementation", path,
+            new { effectiveDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(3).ToString("yyyy-MM-dd") });
+        Assert.Empty(await InboxAsync(Owner, id));
+        Assert.Equal("Verify implementation", Task(Assert.Single(await InboxAsync(Qa, id))));
+
+        await SignAsync(Qa, "qms.change", id, "verify_implementation", "VERIFIED");
+        Assert.Empty(await InboxAsync(Qa, id));
+        Assert.Equal("Record the post-implementation review", Task(Assert.Single(await InboxAsync(Owner, id))));
+        await SendAsync(Owner, HttpMethod.Post, $"{path}/transitions", path, new { action = "complete_review", reason = "As intended." });
+        Assert.Empty(await InboxAsync(Owner, id));
+        Assert.Equal("Close the change", Task(Assert.Single(await InboxAsync(Qa, id))));
+        await SignAsync(Qa, "qms.change", id, "close", "VERIFIED");
+        Assert.Empty(await InboxAsync(Qa, id));
+    }
+
+    [Fact]
+    public async Task Change_approval_is_not_offered_to_the_one_who_prepared_it()
+    {
+        var res = await As(Both).PostAsJsonAsync("/api/qms/v1/changes", new
+        {
+            siteId = Berlin, title = "Own change", description = "d", justification = "j", changeType = "PLANNED", changeCategory = "MINOR",
+        });
+        var id = (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        var path = $"/api/qms/v1/changes/{id}";
+        await SendAsync(Both, HttpMethod.Post, $"{path}/transitions", path, new { action = "submit" });
+        await SendAsync(Both, HttpMethod.Put, $"{path}/impacts/QUALITY", path, new { isImpacted = false, assessment = "No impact." });
+        await SendAsync(Both, HttpMethod.Post, $"{path}/transitions", path, new { action = "submit_for_approval" });
+
+        // Both holds every change permission but edited last: segregation of duties leaves it out of their inbox.
+        Assert.Empty(await InboxAsync(Both, id));
+        Assert.Equal("Review and approve the change", Task(Assert.Single(await InboxAsync(Qa, id))));
     }
 
     [Fact]

@@ -122,6 +122,33 @@ Implement✍ (QA + Owner; + RA if regulatory impact) → Implementation (tasks; 
 Pre-effectiveness Verification✍ → Effective (coordinated date; triggers document effective dates, recipe
 versions, retraining) → Post-implementation Review✍ → Closed`
 
+**As implemented (R1, reduced).** `ChangeWorkflow` (`CHANGE_STD` v1) in `src/Hosts/PharmaOS.Platform.Host/Qms/`. Impact
+assessments (one per area: quality, validation, documentation, regulatory, manufacturing, laboratory, training) and
+implementation tasks are part of the change record; the approval signature covers them (the record hash includes child
+records). Every change to an assessment or task advances the change's version (ETag).
+
+| From | Action | To | Who (permission) | Signature | Guard / reason |
+|---|---|---|---|---|---|
+| Draft | submit | Assessment | `qms.change:write` | — | A temporary change has its end date |
+| Draft | cancel | Cancelled | `qms.change:write` | Cancelled | Reason required |
+| Assessment | submit_for_approval | Approval | `qms.change:write` | — | At least one impact assessment; one for the regulatory area when the regulatory impact is major |
+| Assessment | cancel | Cancelled | `qms.change:approve` | Cancelled | Reason required |
+| Approval | approve | Implementation | `qms.change:approve` | Approved (not the last editor) | — |
+| Approval | return | Assessment | `qms.change:approve` | — | Reason required |
+| Approval | cancel | Cancelled | `qms.change:approve` | Cancelled | Reason required |
+| Implementation | verify_implementation | Post-implementation review | `qms.change:approve` | Verified (not the last editor) | At least one task, every task done, effective date set |
+| Post-implementation review | complete_review | Closure | `qms.change:write` | — | Reason required: the review conclusion, kept in the history |
+| Closure | close | Closed | `qms.change:approve` | Verified (not the last editor) | — |
+
+Tasks (phase before, during or after implementation) have an assignee and due date; they are planned and withdrawn in
+Assessment and completed in Implementation, where the owner also sets the effective date. The post-implementation review is
+recorded by the owner so that QA, who verified the implementation, is not the last editor when signing the closure.
+Not yet: separate initial and parallel impact assessments assigned automatically by affected item type, affected items
+(documents, equipment, registered details), regulatory assessments per country and variation records, the risk
+assessment link, the coordinated effective date triggering document effective dates, recipe versions and retraining,
+enforcement of the end date of a temporary change (it is recorded and required, not enforced), and links from deviations
+and CAPAs.
+
 ### 9.3.4 Reference workflow: Training
 `Assigned → In Progress → (Assessment) → Completed✍ (trainee) → [OJT: Trainer Verified✍] → Qualified`, with
 `Overdue` by timer and `Waived✍` through QA.

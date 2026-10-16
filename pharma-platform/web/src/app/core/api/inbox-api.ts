@@ -24,7 +24,8 @@ export interface Inbox {
 
 /** Route of a record in the app, by entity code. */
 export function recordLink(item: Pick<InboxItem, 'entity' | 'recordId'>): string[] {
-  return item.entity === 'qms.capa' ? ['/capas', item.recordId] : ['/deviations', item.recordId];
+  const base = item.entity === 'qms.capa' ? '/capas' : item.entity === 'qms.change' ? '/changes' : '/deviations';
+  return [base, item.recordId];
 }
 
 /** "My work" for the signed-in user; keeps the counts the shell shows next to the menu entry. */

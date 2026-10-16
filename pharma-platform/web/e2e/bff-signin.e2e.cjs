@@ -41,7 +41,7 @@ let recordPath = '';
       const u = await page.evaluate(() => fetch('/bff/user').then((r) => r.json()));
       assert.equal(u.login, 'qa.analyst');
       assert.equal(u.tenantId, '0000000a-0000-0000-0000-000000000000');
-      assert.deepEqual(u.permissions, ['audit.trail:read', 'esig.sign', 'mdm.uom:read', 'mdm.uom:write', 'qms.capa:read', 'qms.capa:write', 'qms.deviation:read', 'qms.deviation:write']);
+      assert.deepEqual(u.permissions, ['audit.trail:read', 'esig.sign', 'mdm.uom:read', 'mdm.uom:write', 'qms.capa:read', 'qms.capa:write', 'qms.change:read', 'qms.change:write', 'qms.deviation:read', 'qms.deviation:write']);
       assert.ok(u.authTime, 'auth_time missing');
       assert.match(u.logoutUrl, /^\/bff\/logout\?sid=/);
     });

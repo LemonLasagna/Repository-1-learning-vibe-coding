@@ -88,6 +88,18 @@
         {
           "name": "qms.capa:approve",
           "description": "PharmaOS permission qms.capa:approve (QA: approve or return the plan, verify implementation and effectiveness)"
+        },
+        {
+          "name": "qms.change:read",
+          "description": "PharmaOS permission qms.change:read (read change controls)"
+        },
+        {
+          "name": "qms.change:write",
+          "description": "PharmaOS permission qms.change:write (raise change controls, assess impact, plan and complete tasks, record the post-implementation review)"
+        },
+        {
+          "name": "qms.change:approve",
+          "description": "PharmaOS permission qms.change:approve (QA: approve or return the change, verify the implementation, close, cancel after submission)"
         }
       ]
     }
@@ -193,7 +205,9 @@
           "qms.deviation:read",
           "qms.deviation:write",
           "qms.capa:read",
-          "qms.capa:write"
+          "qms.capa:write",
+          "qms.change:read",
+          "qms.change:write"
         ]
       }
     },
@@ -220,7 +234,8 @@
         "pharmaos-web": [
           "mdm.uom:read",
           "qms.deviation:read",
-          "qms.capa:read"
+          "qms.capa:read",
+          "qms.change:read"
         ]
       }
     },
@@ -252,7 +267,9 @@
           "qms.deviation:triage",
           "qms.deviation:approve",
           "qms.capa:read",
-          "qms.capa:approve"
+          "qms.capa:approve",
+          "qms.change:read",
+          "qms.change:approve"
         ]
       }
     }
