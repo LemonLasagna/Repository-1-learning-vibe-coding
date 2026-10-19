@@ -147,6 +147,9 @@ jobs:
           if grep -E '\| FAIL \|' "$r"; then echo "Report contains failed checks"; exit 1; fi
           grep -q 'SMOKE' "$r"
 
+      - name: Backup and restore reproduces the database (schema, every row, audit trail)
+        run: PGPASSWORD=postgres tools/backup_restore_test.sh pharmaos_ci localhost 5432 postgres
+
   e2e:
     # Real sign-in: Keycloak (development realm) → backend-for-frontend → Angular, in Chrome.
     runs-on: ubuntu-latest
@@ -181,8 +184,6 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: pharma-platform/web/package-lock.json
-      - name: Backup and restore reproduces the database (schema, every row, audit trail)
-        run: PGPASSWORD=postgres tools/backup_restore_test.sh pharmaos_ci localhost 5432 postgres
       - name: Start Keycloak with the development realm
         run: docker compose -f deploy/keycloak/docker-compose.dev.yml up -d
       - name: Create the database with the demo organisation (installer, no frontend, no smoke check)
