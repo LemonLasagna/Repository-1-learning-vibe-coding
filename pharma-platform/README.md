@@ -88,6 +88,16 @@ These are deliberate, and each is argued in the referenced document.
    [roadmap](docs/20-product-roadmap.md) sequences it so that a validatable QMS+DMS core ships first.
    MES/EBR, the deepest and highest-risk module, comes last.
 
+## Licence and source
+
+PharmaOS is free software under the GNU Affero General Public License v3.0 (see `LICENSE`). If you run a modified version
+for others over a network, the AGPL requires you to offer them its source; the application's footer links to the repository.
+
+Dependencies are checked against an allow-list (`tools/licence_policy.json`) when CI builds the software bill of materials:
+`python3 tools/sbom_licence_check.py` writes `sbom/*.cdx.json` (CycloneDX 1.5) and fails on any licence not on the list.
+Restore is checked by `tools/backup_restore_test.sh <database>`, which dumps a database, restores it and compares the schema,
+every row count and the audit trail.
+
 ## Regulatory reference convention
 
 Clause numbers are cited only where the citation is certain. Examples are the 21 CFR Part 11 sections

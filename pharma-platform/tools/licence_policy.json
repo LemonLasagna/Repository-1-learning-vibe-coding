@@ -1,0 +1,20 @@
+{
+  "_comment": "Licences the platform accepts in its dependencies. Each entry is an SPDX identifier. The platform itself is AGPL-3.0-only. Add a licence here only after reading its terms; record the reading under reviewed_exceptions with a reason.",
+  "allowed": [
+    "MIT",
+    "MIT-0",
+    "ISC",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "PostgreSQL",
+    "BlueOak-1.0.0",
+    "CC0-1.0",
+    "CC-BY-4.0",
+    "MPL-2.0",
+    "AGPL-3.0-only",
+    "AGPL-3.0-or-later"
+  ],
+  "reviewed_exceptions": []
+}

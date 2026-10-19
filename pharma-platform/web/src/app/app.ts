@@ -15,6 +15,8 @@ export class App {
   protected readonly config = inject(APP_CONFIG);
   protected readonly auth = inject(AuthService);
   protected readonly inbox = inject(InboxApi);
+  /** AGPL-3.0 section 13: users who interact with the software over a network are offered its source. */
+  protected readonly sourceUrl = 'https://github.com/LemonLasagna/Repository-1-learning-vibe-coding';
 
   constructor() {
     // Refresh the "My work" count after each navigation (e.g. returning from a signature or a transition).
