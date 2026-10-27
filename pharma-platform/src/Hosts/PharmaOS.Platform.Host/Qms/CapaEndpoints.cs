@@ -109,7 +109,8 @@ public static class CapaEndpoints
         {
             var deviation = await new DeviationStore(conn, sqlTx).GetAsync(sourceId!.Value, forUpdate: false, ct);
             if (deviation is null) return Invalid("sourceId", "Unknown deviation.");
-            if (WorkflowTransitions.IsFinal(DeviationWorkflow.Definition, deviation.Status))
+            // Final in the workflow version that deviation runs on, which an authored version may have changed.
+            if (WorkflowTransitions.IsFinal(await new WorkflowStore(conn, sqlTx).DefinitionOfAsync(deviation, DeviationEntity.Instance, ct), deviation.Status))
                 return Invalid("sourceId", $"Deviation {deviation.DeviationNo} is {deviation.Status.ToLowerInvariant()}.");
             siteId = deviation.SiteId;
         }
@@ -233,7 +234,7 @@ public static class CapaEndpoints
             var (conn, sqlTx) = Sql(db);
             var change = await new ChangeStore(conn, sqlTx).GetAsync(changeId, forUpdate: false, ct);
             if (change is null) return Invalid("changeId", "Unknown change control.");
-            if (WorkflowTransitions.IsFinal(ChangeWorkflow.Definition, change.Status))
+            if (WorkflowTransitions.IsFinal(await new WorkflowStore(conn, sqlTx).DefinitionOfAsync(change, ChangeEntity.Instance, ct), change.Status))
                 return Invalid("changeId", $"{change.CcNo} is {change.Status.ToLowerInvariant()}.");
             await store.UpdateActionAsync(row.Id, no, new Dictionary<string, object?> { ["change_control_id"] = changeId }, ct);
             return null;

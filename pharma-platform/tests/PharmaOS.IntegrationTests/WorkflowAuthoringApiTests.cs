@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Npgsql;
 using PharmaOS.Platform.Host;
 using PharmaOS.Platform.Host.Qms;
@@ -29,6 +30,15 @@ internal static class Authoring
         version,
         initialState = CapaWorkflow.Definition.InitialState,
         transitions = CapaWorkflow.Definition.Transitions.Select(change ?? (t => t)).Select(Transition).ToArray(),
+    };
+
+    /// <summary>A shipped workflow as a draft of <paramref name="version"/>, with the given transitions (default: unchanged).</summary>
+    public static object From(WorkflowDefinition release, int version, IEnumerable<TransitionDefinition>? transitions = null) => new
+    {
+        code = release.Code,
+        version,
+        initialState = release.InitialState,
+        transitions = (transitions ?? release.Transitions).Select(Transition).ToArray(),
     };
 
     public static async Task<(Guid Id, string Etag, JsonElement Body)> CreateAsync(HttpClient client, object body)
@@ -114,6 +124,44 @@ public sealed class WorkflowAuthoringApiTests : IClassFixture<PostgresFixture>, 
         Assert.Contains(errors, e => e.StartsWith("State 'APPROVED_SOMEWHERE' is not a CAPA state"));
         Assert.Contains(errors, e => e.Contains("permission 'qms.capa:anything', which the platform does not define"));
         Assert.Contains(errors, e => e.Contains("signature meaning 'AUTHORED', which a CAPA cannot be signed with"));
+    }
+
+    [Fact]
+    public async Task A_guard_must_read_fields_its_record_type_has()
+    {
+        var guard = JsonNode.Parse("""{">":[{"var":"no_such_field"},0]}""");
+        var (_, _, body) = await Authoring.CreateAsync(As(Author),
+            Authoring.Capa(Authoring.NewVersion(), t => t.Action == "submit_plan" ? t with { Guard = guard } : t));
+        Assert.Equal("DRAFT", body.GetProperty("status").GetString());
+        Assert.Contains(body.GetProperty("errors").EnumerateArray(),
+            e => e.GetString()!.StartsWith("Transition 1 ('submit_plan') has a guard that reads 'no_such_field', which a CAPA does not have"));
+    }
+
+    [Fact]
+    public async Task A_guard_may_read_the_fields_the_shipped_guards_read()
+    {
+        var guard = JsonNode.Parse("""{"and":[{">":[{"var":"actions_planned"},1]},{"var":"effectiveness_defined"}]}""");
+        var (_, _, body) = await Authoring.CreateAsync(As(Author),
+            Authoring.Capa(Authoring.NewVersion(), t => t.Action == "submit_plan" ? t with { Guard = guard } : t));
+        Assert.Equal("VALID", body.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task A_guard_with_a_computed_field_name_is_flagged()
+    {
+        var guard = JsonNode.Parse("""{"var":{"if":[true,"actions_planned","actions_open"]}}""");
+        var (_, _, body) = await Authoring.CreateAsync(As(Author),
+            Authoring.Capa(Authoring.NewVersion(), t => t.Action == "submit_plan" ? t with { Guard = guard } : t));
+        Assert.Contains(body.GetProperty("errors").EnumerateArray(), e => e.GetString()!.Contains("cannot be checked: A variable name must be written out"));
+    }
+
+    [Fact]
+    public async Task A_deviation_guard_may_read_a_custom_field_because_its_field_set_is_open()
+    {
+        var guard = JsonNode.Parse("""{"not":{"isEmpty":{"var":"tenant_custom_field"}}}""");
+        var transitions = DeviationWorkflow.Definition.Transitions.Select(t => t.Action == "start_investigation" ? t with { Guard = guard } : t);
+        var (_, _, body) = await Authoring.CreateAsync(As(Author), Authoring.From(DeviationWorkflow.Definition, Authoring.NewVersion(), transitions));
+        Assert.Equal("VALID", body.GetProperty("status").GetString());
     }
 
     [Fact]

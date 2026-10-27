@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using PharmaOS.Platform.Host;
+using PharmaOS.Platform.Host.Qms;
+using PharmaOS.Workflow;
 
 namespace PharmaOS.IntegrationTests;
 
@@ -19,7 +21,8 @@ public sealed class WorkflowActivationApiTests : IClassFixture<PostgresFixture>,
 
     /// <summary>One person with every permission, as in a single-user installation.</summary>
     private static readonly TestUser Owner = new(Guid.Parse("b8888888-0000-0000-0000-000000000001"), Tenant, "Olu Owner", "o.owner",
-        Permissions.WorkflowAuthor, Permissions.WorkflowApprove, Permissions.CapaRead, Permissions.CapaWrite, Permissions.EsigSign);
+        Permissions.WorkflowAuthor, Permissions.WorkflowApprove, Permissions.CapaRead, Permissions.CapaWrite, Permissions.EsigSign,
+        Permissions.DeviationRead, Permissions.DeviationWrite);
 
     private static readonly TestUser Approver = new(Guid.Parse("b8888888-0000-0000-0000-000000000002"), Tenant, "Ama Approver", "a.approver",
         Permissions.WorkflowApprove);
@@ -95,6 +98,45 @@ public sealed class WorkflowActivationApiTests : IClassFixture<PostgresFixture>,
         // The activated version is released now, so it cannot be drafted again.
         var again = await As(Owner).PostAsJsonAsync(Authoring.Base, Authoring.Capa(2));
         Assert.Equal("VERSION_RELEASED", await Authoring.CodeOf(again));
+    }
+
+    [Fact]
+    public async Task A_cancelled_deviation_is_a_valid_capa_source_when_its_own_workflow_version_can_reopen_it()
+    {
+        // Authored version 3: cancelling needs no signature, and a cancelled deviation can be reopened, so CANCELLED is not final.
+        var reopenable = DeviationWorkflow.Definition.Transitions
+            .Select(t => t is { Action: "cancel", From: DeviationWorkflow.Draft } ? t with { SignatureMeaning = null } : t)
+            .Append(new TransitionDefinition("reopen", DeviationWorkflow.Cancelled, DeviationWorkflow.Draft, Permissions.DeviationWrite, Label: "Reopen"));
+        var (draftId, etag, _) = await Authoring.CreateAsync(As(Owner), Authoring.From(DeviationWorkflow.Definition, 3, reopenable));
+        foreach (var step in new[] { "submit", "approve", "activate" })
+        {
+            var res = await Authoring.StepAsync(As(Owner), draftId, step, etag);
+            Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+            etag = res.Headers.ETag!.Tag;
+        }
+
+        var created = await As(Owner).PostAsJsonAsync("/api/qms/v1/deviations", new
+        {
+            siteId = Berlin, title = "Reopenable", description = "Cancelled, then used as a CAPA source.", classification = "MINOR",
+            deviationType = "PROCESS", occurredAt = DateTimeOffset.UtcNow.AddHours(-2).ToString("O"), shift = "EARLY",
+        });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var deviation = await created.Content.ReadFromJsonAsync<JsonElement>();
+        var deviationId = deviation.GetProperty("id").GetGuid();
+
+        var cancel = await As(Owner).SendAsync(new HttpRequestMessage(HttpMethod.Post, $"/api/qms/v1/deviations/{deviationId}/transitions")
+            { Content = JsonContent.Create(new { action = "cancel", reason = "Raised twice." }) }
+            .WithHeaders(ifMatch: $"\"{deviation.GetProperty("rowVersion").GetInt32()}\""));
+        Assert.Equal(HttpStatusCode.OK, cancel.StatusCode);
+        Assert.Equal("CANCELLED", (await cancel.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("status").GetString());
+
+        // The shipped workflow would call CANCELLED final and refuse; this deviation runs on version 3, where it is not final.
+        var capa = await As(Owner).PostAsJsonAsync("/api/qms/v1/capas", new
+        {
+            sourceType = "DEVIATION", sourceId = deviationId, title = "From a reopenable deviation", problemStatement = "p",
+            capaType = "CORRECTIVE", priority = "LOW",
+        });
+        Assert.Equal(HttpStatusCode.Created, capa.StatusCode);
     }
 
     [Fact]
