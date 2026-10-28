@@ -66,4 +66,33 @@ public class RuleEvaluatorTests
     {
         Assert.Throws<RuleException>(() => RuleEvaluator.Evaluate(JsonNode.Parse("""{"+":["1",2]}"""), null));
     }
+
+    [Fact]
+    public void Variables_lists_every_field_the_rule_reads()
+    {
+        var rule = JsonNode.Parse("""
+            {"and":[{">":[{"var":"actions_planned"},0]},{"or":[{"var":"effectiveness_defined"},{"not":{"isEmpty":{"var":"result"}}}]}]}
+            """);
+        Assert.Equal(new[] { "actions_planned", "effectiveness_defined", "result" }, RuleEvaluator.Variables(rule).Order());
+    }
+
+    [Fact]
+    public void Variables_reads_the_field_from_a_dotted_name_and_the_fallback_value()
+    {
+        var rule = JsonNode.Parse("""{"==":[{"var":["owner.name",{"var":"title"}]},"x"]}""");
+        Assert.Equal(new[] { "owner", "title" }, RuleEvaluator.Variables(rule).Order());
+    }
+
+    [Fact]
+    public void Variables_finds_nothing_in_a_rule_without_fields()
+    {
+        Assert.Empty(RuleEvaluator.Variables(JsonNode.Parse("""{"==":[1,1]}""")));
+    }
+
+    [Fact]
+    public void Variables_refuses_a_computed_field_name()
+    {
+        var rule = JsonNode.Parse("""{"var":{"if":[true,"a","b"]}}""");
+        Assert.Throws<RuleException>(() => RuleEvaluator.Variables(rule));
+    }
 }

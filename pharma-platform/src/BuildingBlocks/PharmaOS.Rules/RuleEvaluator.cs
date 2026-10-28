@@ -43,6 +43,42 @@ public static class RuleEvaluator
     /// <summary>Configuration-time check: known operators, size and depth limits. Throws <see cref="RuleException"/>.</summary>
     public static void Validate(JsonNode? rule) => Walk(rule, 0, new Budget());
 
+    /// <summary>
+    /// The record fields a rule reads: the first segment of each <c>var</c> name (a record's data is flat, so "a.b" reads field "a").
+    /// A variable name must be written out; a computed name cannot be checked, so it throws <see cref="RuleException"/>.
+    /// </summary>
+    public static IReadOnlySet<string> Variables(JsonNode? rule)
+    {
+        var found = new HashSet<string>(StringComparer.Ordinal);
+        Collect(rule, found);
+        return found;
+    }
+
+    private static void Collect(JsonNode? rule, HashSet<string> found)
+    {
+        switch (rule)
+        {
+            case JsonArray arr:
+                foreach (var item in arr) Collect(item, found);
+                break;
+            case JsonObject obj:
+                var (op, args) = Split(obj);
+                if (op == "var")
+                {
+                    if (args.Count == 0 || args[0] is not JsonValue v || !v.TryGetValue<string>(out var name))
+                        throw new RuleException("A variable name must be written out, not computed");
+                    var field = name.Split('.')[0];
+                    if (field.Length > 0) found.Add(field);
+                    foreach (var fallback in args.Skip(1)) Collect(fallback, found);
+                }
+                else
+                {
+                    foreach (var a in args) Collect(a, found);
+                }
+                break;
+        }
+    }
+
     private sealed class Budget
     {
         public int Nodes;

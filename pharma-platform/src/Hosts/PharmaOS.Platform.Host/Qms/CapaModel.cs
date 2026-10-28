@@ -92,6 +92,12 @@ public sealed record CapaRow(
 {
     public string Number => CapaNo;
 
+    /// <summary>The fields <see cref="ToRuleData"/> offers to guards. A guard in an authored workflow may read only these.</summary>
+    public static readonly IReadOnlySet<string> RuleFields = new HashSet<string>
+    {
+        "capa_type", "priority", "actions_planned", "actions_open", "effectiveness_defined", "effectiveness_result", "status",
+    };
+
     public JsonObject ToRuleData() => new()
     {
         ["capa_type"] = CapaType,

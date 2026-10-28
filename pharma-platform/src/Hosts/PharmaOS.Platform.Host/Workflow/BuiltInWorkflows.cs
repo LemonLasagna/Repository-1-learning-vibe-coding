@@ -1,6 +1,7 @@
 using System.Reflection;
 using PharmaOS.Platform.Host.ESignature;
 using PharmaOS.Platform.Host.Qms;
+using PharmaOS.Rules;
 using PharmaOS.Workflow;
 
 namespace PharmaOS.Platform.Host.Workflow;
@@ -13,17 +14,19 @@ namespace PharmaOS.Platform.Host.Workflow;
 public static class BuiltInWorkflows
 {
     /// <summary>A record type's workflow: its release from code, the entity it runs on and the name it is registered under.</summary>
-    public sealed record Target(string Noun, WorkflowDefinition Release, string EntityCode, string Name, IReadOnlyList<string> Meanings);
+    public sealed record Target(
+        string Noun, WorkflowDefinition Release, string EntityCode, string Name, IReadOnlyList<string> Meanings, IReadOnlySet<string>? RuleFields);
 
     private static readonly IReadOnlyDictionary<string, Target> ByCode = new[]
     {
-        Of("deviation", DeviationWorkflow.Definition, new DeviationSignable(), "Deviation (standard)"),
-        Of("CAPA", CapaWorkflow.Definition, new CapaSignable(), "CAPA (standard)"),
-        Of("change control", ChangeWorkflow.Definition, new ChangeSignable(), "Change control (standard)"),
+        // A deviation's rule data also carries the tenant's custom fields, so its field set is open and its guards are not field-checked.
+        Of("deviation", DeviationWorkflow.Definition, new DeviationSignable(), "Deviation (standard)", null),
+        Of("CAPA", CapaWorkflow.Definition, new CapaSignable(), "CAPA (standard)", CapaRow.RuleFields),
+        Of("change control", ChangeWorkflow.Definition, new ChangeSignable(), "Change control (standard)", ChangeRow.RuleFields),
     }.ToDictionary(t => t.Release.Code);
 
-    private static Target Of(string noun, WorkflowDefinition release, WorkflowSignable signable, string name) =>
-        new(noun, release, signable.EntityCode, name, signable.Meanings);
+    private static Target Of(string noun, WorkflowDefinition release, WorkflowSignable signable, string name, IReadOnlySet<string>? ruleFields) =>
+        new(noun, release, signable.EntityCode, name, signable.Meanings, ruleFields);
 
     public static Target? Find(string code) => ByCode.GetValueOrDefault(code);
 
@@ -56,7 +59,19 @@ public static class BuiltInWorkflows
                 errors.Add($"Transition {index + 1} ('{t.Action}') uses permission '{t.Permission}', which the platform does not define.");
             if (t.SignatureMeaning is { } meaning && !target.Meanings.Contains(meaning))
                 errors.Add($"Transition {index + 1} ('{t.Action}') asks for signature meaning '{meaning}', which a {target.Noun} cannot be signed with. Use: {string.Join(", ", target.Meanings)}.");
+            if (t.Guard is not null && target.RuleFields is { } fields)
+                errors.AddRange(UnknownFields(index, t, target.Noun, fields));
         }
         return errors;
+    }
+
+    /// <summary>A guard that reads a field the record does not have never fails, so it would silently block or allow every transition.</summary>
+    private static IEnumerable<string> UnknownFields(int index, TransitionDefinition t, string noun, IReadOnlySet<string> fields)
+    {
+        IReadOnlySet<string> read;
+        try { read = RuleEvaluator.Variables(t.Guard); }
+        catch (RuleException ex) { return [$"Transition {index + 1} ('{t.Action}') has a guard that cannot be checked: {ex.Message}."]; }
+        return read.Where(f => !fields.Contains(f)).Order().Select(f =>
+            $"Transition {index + 1} ('{t.Action}') has a guard that reads '{f}', which a {noun} does not have. Use: {string.Join(", ", fields.Order())}.");
     }
 }

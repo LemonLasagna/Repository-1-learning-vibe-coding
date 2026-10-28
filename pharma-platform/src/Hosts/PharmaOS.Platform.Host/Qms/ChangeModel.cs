@@ -136,6 +136,13 @@ public sealed record ChangeRow(
 {
     public string Number => CcNo;
 
+    /// <summary>The fields <see cref="ToRuleData"/> offers to guards. A guard in an authored workflow may read only these.</summary>
+    public static readonly IReadOnlySet<string> RuleFields = new HashSet<string>
+    {
+        "change_type", "change_category", "is_temporary", "temporary_end_date", "regulatory_impact", "effective_date",
+        "assessments_total", "regulatory_assessed", "tasks_planned", "tasks_open", "status",
+    };
+
     public JsonObject ToRuleData() => new()
     {
         ["change_type"] = ChangeType,
