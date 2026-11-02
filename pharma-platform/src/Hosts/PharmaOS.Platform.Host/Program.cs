@@ -41,6 +41,7 @@ builder.Services.AddSingleton<ISignableSource, UomSignable>();
 builder.Services.AddSingleton<ISignableSource, DeviationSignable>();
 builder.Services.AddSingleton<ISignableSource, CapaSignable>();
 builder.Services.AddSingleton<ISignableSource, ChangeSignable>();
+builder.Services.AddSingleton<ISignableSource, WorkflowDraftSignable>();
 builder.Services.AddSingleton<IInboxSource, DeviationInbox>();
 builder.Services.AddSingleton<IInboxSource, CapaInbox>();
 builder.Services.AddSingleton<IInboxSource, ChangeInbox>();

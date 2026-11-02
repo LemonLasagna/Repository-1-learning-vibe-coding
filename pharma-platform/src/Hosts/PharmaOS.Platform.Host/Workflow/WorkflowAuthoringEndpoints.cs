@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using System.Text.Json.Nodes;
-using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
 using PharmaOS.Gxp;
@@ -16,7 +15,7 @@ public sealed record DraftInput(string Code, int Version, string InitialState, I
 public sealed record DraftRow(
     Guid Id, string Code, int Version, string InitialState, JsonArray Transitions, string Status, IReadOnlyList<string> Errors,
     Guid? SubmittedBy, DateTimeOffset? SubmittedAt, Guid? ApprovedBy, DateTimeOffset? ApprovedAt, string? DecisionComment,
-    DateTimeOffset? ActivatedAt, int RowVersion, DateTimeOffset UpdatedAt)
+    DateTimeOffset? ActivatedAt, int RowVersion, DateTimeOffset UpdatedAt, Guid UpdatedBy, Guid? ApprovalSignatureId)
 {
     public DraftInput ToInput() => new(Code, Version, InitialState, WorkflowStore.TransitionsFromJson(Transitions));
 }
@@ -37,7 +36,7 @@ public sealed class WorkflowDraftStore(NpgsqlConnection conn, NpgsqlTransaction 
 {
     private const string Columns = """
         id, code, version_no, initial_state, transitions::text, status, validation_errors::text, submitted_by, submitted_at,
-        approved_by, approved_at, decision_comment, activated_at, row_version, updated_at
+        approved_by, approved_at, decision_comment, activated_at, row_version, updated_at, updated_by, approval_signature_id
         """;
 
     private NpgsqlCommand Cmd(string sql) => new(sql, conn, tx);
@@ -165,7 +164,7 @@ public sealed class WorkflowDraftStore(NpgsqlConnection conn, NpgsqlTransaction 
         r.IsDBNull(7) ? null : r.GetGuid(7), r.IsDBNull(8) ? null : r.GetFieldValue<DateTimeOffset>(8),
         r.IsDBNull(9) ? null : r.GetGuid(9), r.IsDBNull(10) ? null : r.GetFieldValue<DateTimeOffset>(10),
         r.IsDBNull(11) ? null : r.GetString(11), r.IsDBNull(12) ? null : r.GetFieldValue<DateTimeOffset>(12),
-        r.GetInt32(13), r.GetFieldValue<DateTimeOffset>(14));
+        r.GetInt32(13), r.GetFieldValue<DateTimeOffset>(14), r.GetGuid(15), r.IsDBNull(16) ? null : r.GetGuid(16));
 
     private static string ErrorsJson(IReadOnlyList<string> errors) => new JsonArray([.. errors.Select(e => (JsonNode)JsonValue.Create(e)!)]).ToJsonString();
 }
@@ -195,7 +194,7 @@ public static class WorkflowAuthoringEndpoints
         group.MapPut("{id:guid}", Replace).RequireAuthorization(Permissions.WorkflowAuthor);
         group.MapPost("{id:guid}/validate", Validate).RequireAuthorization(Permissions.WorkflowAuthor);
         group.MapPost("{id:guid}/submit", Submit).RequireAuthorization(Permissions.WorkflowAuthor);
-        group.MapPost("{id:guid}/approve", Approve).RequireAuthorization(Permissions.WorkflowApprove);
+        group.MapPost("{id:guid}/approve", ApproveNeedsSignature).RequireAuthorization(Permissions.WorkflowApprove);
         group.MapPost("{id:guid}/reject", Reject).RequireAuthorization(Permissions.WorkflowApprove);
         group.MapPost("{id:guid}/activate", Activate).RequireAuthorization(Permissions.WorkflowApprove);
     }
@@ -315,21 +314,14 @@ public static class WorkflowAuthoringEndpoints
             });
         });
 
-    private static Task<IResult> Approve(
-        Guid id, DecisionBody? body, PlatformDbContext db, IGxpContextAccessor gxp, IOptions<WorkflowAuthoringOptions> options,
-        TimeProvider time, HttpContext http, CancellationToken ct) =>
-        StepAsync(id, db, gxp, http, ct, async (step) =>
-        {
-            if (step.Row.Status != Submitted) return WrongStatus(step.Row, "approval", Submitted);
-            if (options.Value.RequireSecondPerson && step.Row.SubmittedBy == step.Ctx.UserId)
-                return Problem(StatusCodes.Status403Forbidden, "SAME_PERSON", "Second person required",
-                    "The person who submitted a workflow cannot approve it. Ask someone else with the approval permission.");
-            return await step.SetAsync(new Dictionary<string, object?>
-            {
-                ["status"] = Approved, ["approved_by"] = step.Ctx.UserId, ["approved_at"] = time.GetUtcNow(),
-                ["decision_comment"] = string.IsNullOrWhiteSpace(body?.Comment) ? null : body.Comment.Trim(),
-            });
-        });
+    /// <summary>
+    /// Approval is an electronic signature, so it cannot be done by a plain call: the client starts a signing challenge for entity
+    /// wf.definition (action approve, meaning APPROVED), confirms the password, and the signature and the approval commit together
+    /// (<see cref="WorkflowDraftSignable"/>).
+    /// </summary>
+    private static IResult ApproveNeedsSignature(Guid id) =>
+        Problem(StatusCodes.Status400BadRequest, "SIGNATURE_REQUIRED", "Signature required",
+            $"Approving a workflow is an electronic signature. Start it with POST /api/esig/v1/challenges (entity {WorkflowDraftSignable.Entity}, recordId {id}, action approve, meaning APPROVED).");
 
     private static Task<IResult> Reject(
         Guid id, DecisionBody? body, PlatformDbContext db, IGxpContextAccessor gxp, HttpContext http, CancellationToken ct) =>
@@ -341,7 +333,7 @@ public static class WorkflowAuthoringEndpoints
             return await step.SetAsync(new Dictionary<string, object?>
             {
                 ["status"] = status, ["validation_errors"] = problems, ["submitted_by"] = null, ["submitted_at"] = null,
-                ["approved_by"] = null, ["approved_at"] = null, ["decision_comment"] = body.Comment.Trim(),
+                ["approved_by"] = null, ["approved_at"] = null, ["approval_signature_id"] = null, ["decision_comment"] = body.Comment.Trim(),
             });
         });
 
@@ -352,6 +344,8 @@ public static class WorkflowAuthoringEndpoints
         StepAsync(id, db, gxp, http, ct, async (step) =>
         {
             if (step.Row.Status != Approved) return WrongStatus(step.Row, "activation", Approved);
+            if (step.Row.ApprovalSignatureId is null)
+                return Problem(StatusCodes.Status409Conflict, "NOT_SIGNED", "Approval not signed", "Only a signed approval can be activated.");
             var input = step.Row.ToInput();
             var (_, problems) = await CheckAsync(step.Store, input, ct);
             if (problems.Count > 0)
@@ -484,10 +478,10 @@ public static class WorkflowAuthoringEndpoints
     private sealed record DraftResponse(
         Guid Id, string Code, int Version, string InitialState, JsonArray Transitions, string Status, IReadOnlyList<string> Errors,
         Guid? SubmittedBy, DateTimeOffset? SubmittedAt, Guid? ApprovedBy, DateTimeOffset? ApprovedAt, string? DecisionComment,
-        DateTimeOffset? ActivatedAt, int RowVersion, DateTimeOffset UpdatedAt)
+        DateTimeOffset? ActivatedAt, int RowVersion, DateTimeOffset UpdatedAt, Guid? ApprovalSignatureId)
     {
         public static DraftResponse From(DraftRow r) =>
             new(r.Id, r.Code, r.Version, r.InitialState, r.Transitions, r.Status, r.Errors, r.SubmittedBy, r.SubmittedAt, r.ApprovedBy,
-                r.ApprovedAt, r.DecisionComment, r.ActivatedAt, r.RowVersion, r.UpdatedAt);
+                r.ApprovedAt, r.DecisionComment, r.ActivatedAt, r.RowVersion, r.UpdatedAt, r.ApprovalSignatureId);
     }
 }

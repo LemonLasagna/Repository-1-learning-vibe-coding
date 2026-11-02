@@ -1122,6 +1122,7 @@ CREATE TABLE wf.workflow_draft (
   approved_at timestamptz,
   decision_comment varchar(1000),
   activated_at timestamptz,
+  approval_signature_id uuid,
   ext jsonb NOT NULL DEFAULT '{}'::jsonb,
   row_version integer NOT NULL DEFAULT 1,
   created_at timestamptz NOT NULL DEFAULT now(),

@@ -25,7 +25,7 @@ public sealed class WorkflowActivationApiTests : IClassFixture<PostgresFixture>,
         Permissions.DeviationRead, Permissions.DeviationWrite);
 
     private static readonly TestUser Approver = new(Guid.Parse("b8888888-0000-0000-0000-000000000002"), Tenant, "Ama Approver", "a.approver",
-        Permissions.WorkflowApprove);
+        Permissions.WorkflowApprove, Permissions.EsigSign);
 
     private const string NewLabel = "Send plan to QA";
 
@@ -81,15 +81,11 @@ public sealed class WorkflowActivationApiTests : IClassFixture<PostgresFixture>,
 
         var (id, etag, _) = await Authoring.CreateAsync(As(Owner),
             Authoring.Capa(2, t => t.Action == "submit_plan" ? t with { Label = NewLabel } : t));
-        foreach (var step in new[] { "submit", "approve", "activate" })
-        {
-            var res = await Authoring.StepAsync(As(Owner), id, step, etag);
-            Assert.Equal(HttpStatusCode.OK, res.StatusCode);
-            etag = res.Headers.ETag!.Tag;
-        }
+        await Authoring.SubmitSignActivateAsync(_factory, Owner, id, etag);
         var active = await As(Owner).GetFromJsonAsync<JsonElement>($"{Authoring.Base}/{id}");
         Assert.Equal("ACTIVE", active.GetProperty("status").GetString());
         Assert.Equal(Owner.Sub, active.GetProperty("approvedBy").GetGuid());
+        Assert.NotEqual(JsonValueKind.Null, active.GetProperty("approvalSignatureId").ValueKind);
 
         var after = await CapaAsync();
         Assert.Equal(NewLabel, await SubmitPlanLabelAsync(after));
@@ -108,12 +104,7 @@ public sealed class WorkflowActivationApiTests : IClassFixture<PostgresFixture>,
             .Select(t => t is { Action: "cancel", From: DeviationWorkflow.Draft } ? t with { SignatureMeaning = null } : t)
             .Append(new TransitionDefinition("reopen", DeviationWorkflow.Cancelled, DeviationWorkflow.Draft, Permissions.DeviationWrite, Label: "Reopen"));
         var (draftId, etag, _) = await Authoring.CreateAsync(As(Owner), Authoring.From(DeviationWorkflow.Definition, 3, reopenable));
-        foreach (var step in new[] { "submit", "approve", "activate" })
-        {
-            var res = await Authoring.StepAsync(As(Owner), draftId, step, etag);
-            Assert.Equal(HttpStatusCode.OK, res.StatusCode);
-            etag = res.Headers.ETag!.Tag;
-        }
+        await Authoring.SubmitSignActivateAsync(_factory, Owner, draftId, etag);
 
         var created = await As(Owner).PostAsJsonAsync("/api/qms/v1/deviations", new
         {
@@ -140,20 +131,21 @@ public sealed class WorkflowActivationApiTests : IClassFixture<PostgresFixture>,
     }
 
     [Fact]
-    public async Task With_the_second_person_rule_on_the_submitter_cannot_approve()
+    public async Task With_the_second_person_rule_on_the_submitter_cannot_sign_the_approval_and_someone_else_can()
     {
         using var strict = new PlatformFactory(_db, settings: new Dictionary<string, string> { ["WorkflowAuthoring:RequireSecondPerson"] = "true" });
         var (id, etag, _) = await Authoring.CreateAsync(strict.ClientFor(Owner), Authoring.Capa(Authoring.NewVersion()));
         var submit = await Authoring.StepAsync(strict.ClientFor(Owner), id, "submit", etag);
-        etag = submit.Headers.ETag!.Tag;
+        var version = Authoring.VersionOf(submit.Headers.ETag!.Tag);
 
-        var self = await Authoring.StepAsync(strict.ClientFor(Owner), id, "approve", etag);
+        var self = await Authoring.SignApprovalAsync(strict, Owner, id, version);
         Assert.Equal(HttpStatusCode.Forbidden, self.StatusCode);
         Assert.Equal("SAME_PERSON", await Authoring.CodeOf(self));
 
-        var other = await Authoring.StepAsync(strict.ClientFor(Approver), id, "approve", etag, new { comment = "Checked against the SOP." });
-        Assert.Equal(HttpStatusCode.OK, other.StatusCode);
-        var approved = await other.Content.ReadFromJsonAsync<JsonElement>();
+        var other = await Authoring.SignApprovalAsync(strict, Approver, id, version, "Checked against the SOP.");
+        Assert.Equal(HttpStatusCode.Created, other.StatusCode);
+        var approved = await strict.ClientFor(Owner).GetFromJsonAsync<JsonElement>($"{Authoring.Base}/{id}");
+        Assert.Equal("APPROVED", approved.GetProperty("status").GetString());
         Assert.Equal(Approver.Sub, approved.GetProperty("approvedBy").GetGuid());
         Assert.Equal("Checked against the SOP.", approved.GetProperty("decisionComment").GetString());
     }
