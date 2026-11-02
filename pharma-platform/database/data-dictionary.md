@@ -708,6 +708,7 @@
 | approved_at | timestamptz | Y |  |
 | decision_comment | varchar(1000) | Y |  |
 | activated_at | timestamptz | Y |  |
+| approval_signature_id | uuid | Y | FK → `esig.signature` |
 | _unique_ | (code, version_no) | | |
 
 ### `wf.approval_route_template`  (flags: V; audited)

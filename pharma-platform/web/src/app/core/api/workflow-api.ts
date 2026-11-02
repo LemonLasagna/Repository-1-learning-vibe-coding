@@ -41,6 +41,8 @@ export interface WorkflowDraft {
   approvedAt: string | null;
   decisionComment: string | null;
   activatedAt: string | null;
+  /** Set once the approval was signed (entity wf.definition, meaning APPROVED). */
+  approvalSignatureId: string | null;
   rowVersion: number;
   updatedAt: string;
 }
@@ -52,7 +54,8 @@ export interface DraftContent {
   transitions: WorkflowTransition[];
 }
 
-export type DraftStep = 'submit' | 'approve' | 'reject' | 'activate';
+/** Approving is not a step: it is an electronic signature (EsigApi, entity wf.definition, action approve). */
+export type DraftStep = 'submit' | 'reject' | 'activate';
 
 export const DRAFT_STATUS_LABELS: Record<DraftStatus, string> = {
   DRAFT: 'Draft (has problems)',
@@ -93,7 +96,7 @@ export class WorkflowApi {
     return this.http.post<{ valid: boolean; errors: string[] }>(`${this.base}/${id}/validate`, {});
   }
 
-  /** Submit, approve, reject (needs a comment) or activate, at the version last read. */
+  /** Submit, reject (needs a comment) or activate, at the version last read. */
   step(id: string, etag: string, step: DraftStep, comment: string | null): Observable<Versioned<WorkflowDraft>> {
     return this.send('POST', `${this.base}/${id}/${step}`, etag, { comment });
   }
