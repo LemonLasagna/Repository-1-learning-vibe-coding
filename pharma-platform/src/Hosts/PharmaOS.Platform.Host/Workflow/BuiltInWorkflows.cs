@@ -15,7 +15,8 @@ public static class BuiltInWorkflows
 {
     /// <summary>A record type's workflow: its release from code, the entity it runs on and the name it is registered under.</summary>
     public sealed record Target(
-        string Noun, WorkflowDefinition Release, string EntityCode, string Name, IReadOnlyList<string> Meanings, IReadOnlySet<string>? RuleFields);
+        string Noun, WorkflowDefinition Release, string EntityCode, string Name, IReadOnlyList<string> Meanings, IReadOnlySet<string>? RuleFields,
+        ISignableSource Signable);
 
     private static readonly IReadOnlyDictionary<string, Target> ByCode = new[]
     {
@@ -26,7 +27,7 @@ public static class BuiltInWorkflows
     }.ToDictionary(t => t.Release.Code);
 
     private static Target Of(string noun, WorkflowDefinition release, WorkflowSignable signable, string name, IReadOnlySet<string>? ruleFields) =>
-        new(noun, release, signable.EntityCode, name, signable.Meanings, ruleFields);
+        new(noun, release, signable.EntityCode, name, signable.Meanings, ruleFields, signable);
 
     public static Target? Find(string code) => ByCode.GetValueOrDefault(code);
 

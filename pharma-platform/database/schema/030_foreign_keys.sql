@@ -89,6 +89,8 @@ ALTER TABLE wf.process_transition ADD CONSTRAINT fk_process_transition_from_node
 ALTER TABLE wf.process_transition ADD CONSTRAINT fk_process_transition_to_node_id FOREIGN KEY (to_node_id) REFERENCES wf.process_node(id);
 ALTER TABLE wf.process_transition ADD CONSTRAINT fk_process_transition_esig_meaning_id FOREIGN KEY (esig_meaning_id) REFERENCES esig.signature_meaning(id);
 ALTER TABLE wf.workflow_draft ADD CONSTRAINT fk_workflow_draft_approval_signature_id FOREIGN KEY (approval_signature_id) REFERENCES esig.signature(id);
+ALTER TABLE wf.workflow_draft ADD CONSTRAINT fk_workflow_draft_submission_signature_id FOREIGN KEY (submission_signature_id) REFERENCES esig.signature(id);
+ALTER TABLE wf.workflow_draft ADD CONSTRAINT fk_workflow_draft_activation_signature_id FOREIGN KEY (activation_signature_id) REFERENCES esig.signature(id);
 ALTER TABLE wf.approval_route_step ADD CONSTRAINT fk_approval_route_step_route_template_id FOREIGN KEY (route_template_id) REFERENCES wf.approval_route_template(id);
 ALTER TABLE wf.approval_route_step ADD CONSTRAINT fk_approval_route_step_esig_meaning_id FOREIGN KEY (esig_meaning_id) REFERENCES esig.signature_meaning(id);
 ALTER TABLE wf.process_instance ADD CONSTRAINT fk_process_instance_process_definition_id FOREIGN KEY (process_definition_id) REFERENCES wf.process_definition(id);

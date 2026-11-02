@@ -1,11 +1,26 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NpgsqlTypes;
 using PharmaOS.Gxp;
 using PharmaOS.Workflow;
 
 namespace PharmaOS.Platform.Host.Workflow;
+
+/// <summary>A released version of a workflow cannot be stored again with different content (URS-WF-005).</summary>
+public sealed class WorkflowVersionConflictException(string code, int version, string message) : InvalidOperationException(message)
+{
+    public string Code { get; } = code;
+    public int Version { get; } = version;
+}
+
+/// <summary>Where the workflow store reports problems that need a person, such as a release that could not be applied.</summary>
+public static class WorkflowLog
+{
+    public static ILogger Logger { get; set; } = NullLogger.Instance;
+}
 
 public sealed record HistoryEntry(
     DateTimeOffset OccurredAt, string? FromState, string ToState, Guid? ActorId, string? ActorName, string? Comment,
@@ -44,8 +59,22 @@ public sealed class WorkflowStore(NpgsqlConnection conn, NpgsqlTransaction tx)
         await using var get = Cmd("SELECT id FROM wf.process_definition WHERE code = @code");
         get.Parameters.AddWithValue("code", def.Code);
         var definitionId = (Guid)(await get.ExecuteScalarAsync(ct))!;
-        if (await WriteVersionAsync(ctx, definitionId, def, ct))
-            await CancelDraftsAsync(ctx, def, ct);
+        try
+        {
+            if (await WriteVersionAsync(ctx, definitionId, def, ct))
+                await CancelDraftsAsync(ctx, def, ct);
+        }
+        catch (WorkflowVersionConflictException conflict)
+        {
+            // Two releases from code that disagree about one version number is a mistake in the release: fail loudly. But when the
+            // number is held by a version activated from a draft, that version is approved, signed and perhaps in use, and it
+            // cannot change. Records keep using the newest stored version, and the release is reported as not applied.
+            if (!await AuthoredVersionAsync(conflict.Code, conflict.Version, ct)) throw;
+            WorkflowLog.Logger.LogError(
+                "Workflow {Code}: this release defines version {Version}, but version {Version} was activated from an approved draft and cannot change. " +
+                "The release is not applied; new records use the newest stored version. Give the release a higher version number.",
+                conflict.Code, conflict.Version, conflict.Version);
+        }
         return definitionId;
     }
 
@@ -67,6 +96,29 @@ public sealed class WorkflowStore(NpgsqlConnection conn, NpgsqlTransaction tx)
             await cmd.ExecuteNonQueryAsync(ct);
         }
         await WorkflowTransitions.SetChangeReasonAsync(conn, tx, ctx.ChangeReason, ct);
+    }
+
+    /// <summary>True when version <paramref name="version"/> of <paramref name="code"/> was activated from a draft.</summary>
+    private async Task<bool> AuthoredVersionAsync(string code, int version, CancellationToken ct)
+    {
+        await using var cmd = Cmd("SELECT 1 FROM wf.workflow_draft WHERE code = @code AND version_no = @version AND status = 'ACTIVE' LIMIT 1");
+        cmd.Parameters.AddWithValue("code", code);
+        cmd.Parameters.AddWithValue("version", version);
+        return await cmd.ExecuteScalarAsync(ct) is not null;
+    }
+
+    /// <summary>
+    /// True when the code's release defines a version whose number an activated draft already holds with different content: the
+    /// release cannot be applied until it gets a higher version number.
+    /// </summary>
+    public async Task<bool> ReleaseNotAppliedAsync(Guid definitionId, WorkflowDefinition release, CancellationToken ct)
+    {
+        await using var cmd = Cmd("SELECT snapshot_hash FROM wf.process_definition_version WHERE entity_id = @id AND version_no = @version");
+        cmd.Parameters.AddWithValue("id", definitionId);
+        cmd.Parameters.AddWithValue("version", release.Version);
+        return await cmd.ExecuteScalarAsync(ct) is string stored
+            && stored != CanonicalJson.Sha256Hex(ModelObject(release))
+            && await AuthoredVersionAsync(release.Code, release.Version, ct);
     }
 
     /// <summary>The stored definition for <paramref name="code"/>, or null when no record of its type has been created yet.</summary>
@@ -107,7 +159,7 @@ public sealed class WorkflowStore(NpgsqlConnection conn, NpgsqlTransaction tx)
             if (await check.ExecuteScalarAsync(ct) is string released)
             {
                 if (released != hash)
-                    throw new InvalidOperationException(
+                    throw new WorkflowVersionConflictException(def.Code, def.Version,
                         $"Workflow {def.Code} version {def.Version} is already released with different content. A changed workflow needs a new version number.");
                 return false;
             }

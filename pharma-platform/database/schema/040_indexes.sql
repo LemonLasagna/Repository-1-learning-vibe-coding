@@ -258,6 +258,8 @@ CREATE INDEX ix_wf_process_transition_to_node_id ON wf.process_transition (to_no
 CREATE INDEX ix_wf_process_transition_esig_meaning_id ON wf.process_transition (esig_meaning_id);
 CREATE INDEX ix_wf_workflow_draft_tenant ON wf.workflow_draft (tenant_id);
 CREATE INDEX ix_wf_workflow_draft_approval_signature_id ON wf.workflow_draft (approval_signature_id);
+CREATE INDEX ix_wf_workflow_draft_submission_signature_id ON wf.workflow_draft (submission_signature_id);
+CREATE INDEX ix_wf_workflow_draft_activation_signature_id ON wf.workflow_draft (activation_signature_id);
 CREATE UNIQUE INDEX ux_wf_workflow_draft_code_version_no ON wf.workflow_draft (tenant_id, code, version_no);
 CREATE INDEX ix_wf_workflow_draft_status ON wf.workflow_draft (tenant_id, status);
 CREATE INDEX ix_wf_approval_route_template_tenant ON wf.approval_route_template (tenant_id);

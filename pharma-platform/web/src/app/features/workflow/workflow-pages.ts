@@ -4,7 +4,7 @@ import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService, describeError, EsigApi, formatTimestamp, SigningOptions } from '../../core/api/api';
 import {
-  CurrentWorkflow, DRAFT_STATUS_LABELS, DraftStep, WorkflowApi, WorkflowDraft, WorkflowTransition,
+  AFTER_SIGNATURE, CurrentWorkflow, DRAFT_STATUS_LABELS, SIGNED_STEPS, SignedStep, WorkflowApi, WorkflowDraft, WorkflowTransition,
 } from '../../core/api/workflow-api';
 import { EsigDialog, SignConfirmation, SignIntent } from '../../shared/esig-dialog';
 import { Signatures } from '../../shared/signatures';
@@ -16,6 +16,15 @@ import { Signatures } from '../../shared/signatures';
   template: `
     <h1>Workflows</h1>
     @if (error()) {<p class="banner error" role="alert">{{ error() }}</p>}
+    @for (w of workflows(); track w.code) {
+      @if (w.releaseNotApplied) {
+        <p class="banner warning" role="alert">
+          The release defines version {{ w.releaseVersion }} of <code>{{ w.code }}</code>, but version {{ w.releaseVersion }} was activated
+          from an approved draft and cannot change. The release is not applied: records use the activated version.
+          Give the release a higher version number.
+        </p>
+      }
+    }
 
     <h2>Record types</h2>
     <table aria-label="Record types">
@@ -96,8 +105,8 @@ export class WorkflowListPage implements OnInit {
 }
 
 /**
- * One draft: its problems, its transitions, editing while it is a draft, and the lifecycle (submit, sign the approval or reject, activate).
- * Approving is an electronic signature: the dialog confirms what is signed, Keycloak asks for the password, and the approval is
+ * One draft: its problems, its transitions, editing while it is a draft, and the lifecycle: submit, approve and activate, each an
+ * electronic signature, or reject. For a signature the dialog confirms what is signed, Keycloak asks for the password, and the step is
  * recorded together with the signature when the user returns.
  * Buttons appear only for the steps the draft's status and the user's permissions allow; the server checks both again.
  */
@@ -123,29 +132,30 @@ export class WorkflowListPage implements OnInit {
       <div class="steps">
         @if (editable()) {
           <button type="button" class="secondary" [disabled]="busy()" (click)="validate()">Check</button>
-          <button type="button" [disabled]="busy() || d.status !== 'VALID' || dirty()" (click)="run('submit')">Submit for approval</button>
+          @if (canSign()) {
+            <button type="button" [disabled]="busy() || !options() || d.status !== 'VALID' || dirty()" (click)="startSigning('submit')">{{ steps.submit.button }}</button>
+          }
         }
         @if (canApprove()) {
-          @if (d.status === 'SUBMITTED') {
-            @if (canSign()) {
-              <button type="button" [disabled]="busy() || !options()" (click)="startSigning()">Approve and sign…</button>
-            } @else {
-              <span class="hint">Signing the approval needs the electronic signature permission.</span>
-            }
+          @if (d.status === 'SUBMITTED' && canSign()) {
+            <button type="button" [disabled]="busy() || !options()" (click)="startSigning('approve')">{{ steps.approve.button }}</button>
           }
-          @if (d.status === 'APPROVED') {
-            <button type="button" [disabled]="busy()" (click)="run('activate')">Activate</button>
+          @if (d.status === 'APPROVED' && canSign()) {
+            <button type="button" [disabled]="busy() || !options()" (click)="startSigning('activate')">{{ steps.activate.button }}</button>
           }
           @if (d.status === 'SUBMITTED' || d.status === 'APPROVED') {
-            <button type="button" class="secondary" [disabled]="busy() || !commentText().trim()" (click)="run('reject')">Reject</button>
+            <button type="button" class="secondary" [disabled]="busy() || !commentText().trim()" (click)="reject()">Reject</button>
             <label class="wide">Comment (required to reject)
               <input [formControl]="comment" maxlength="1000" placeholder="e.g. Checked against SOP-QA-012" />
             </label>
           }
         }
+        @if (!canSign() && signingNeeded()) {
+          <span class="hint">Signing needs the electronic signature permission.</span>
+        }
       </div>
 
-      @if (d.approvalSignatureId) {
+      @if (d.submissionSignatureId || d.approvalSignatureId || d.activationSignatureId) {
         <pos-signatures entity="wf.definition" [recordId]="d.id" [refresh]="signatureRefresh()" />
       }
       @if (intent(); as i) {
@@ -198,10 +208,13 @@ export class WorkflowDetailPage implements OnInit {
   private readonly router = inject(Router);
 
   readonly id = input.required<string>();
-  /** Set when Keycloak sends the user back after the password was confirmed for the approval signature. */
+  /** Set when Keycloak sends the user back after the password was confirmed for a signature. */
   readonly esigChallenge = input<string | undefined>(undefined, { alias: 'esig' });
   protected readonly statusLabels = DRAFT_STATUS_LABELS;
+  protected readonly steps = SIGNED_STEPS;
   readonly options = signal<SigningOptions | null>(null);
+  /** The step the open signing dialog is for. */
+  private readonly signing = signal<SignedStep>('approve');
   readonly intent = signal<SignIntent | null>(null);
   readonly signatureRefresh = signal(0);
   readonly draft = signal<WorkflowDraft | null>(null);
@@ -220,10 +233,15 @@ export class WorkflowDetailPage implements OnInit {
   readonly editable = computed(() => this.draft()?.status === 'DRAFT' || this.draft()?.status === 'VALID');
   readonly canApprove = computed(() => this.auth.hasPermission('wf.definition:approve'));
   readonly canSign = computed(() => this.auth.hasPermission('esig.sign'));
+  /** True when the draft is at a step this user could take, if they could sign. */
+  readonly signingNeeded = computed(() => {
+    const status = this.draft()?.status;
+    return this.editable() || (this.canApprove() && (status === 'SUBMITTED' || status === 'APPROVED'));
+  });
 
   ngOnInit(): void {
     this.load();
-    if (this.canApprove() && this.canSign()) {
+    if (this.canSign()) {
       this.esig.options(ENTITY).subscribe({ next: (o) => this.options.set(o), error: () => this.options.set(null) });
     }
     const challenge = this.esigChallenge();
@@ -231,13 +249,14 @@ export class WorkflowDetailPage implements OnInit {
   }
 
   /** Shows what is being signed. Nothing is sent until the user confirms. */
-  startSigning(): void {
+  startSigning(step: SignedStep): void {
     const d = this.draft();
     const user = this.auth.user();
     const options = this.options();
-    const meaning = options?.meanings.find((m) => m.code === 'APPROVED');
+    const meaning = options?.meanings.find((m) => m.code === SIGNED_STEPS[step].meaning);
     if (!d || !user || !options || !meaning) return;
     this.notice.set(null);
+    this.signing.set(step);
     this.intent.set({
       entity: ENTITY,
       recordNumber: `${d.code} v${d.version}`,
@@ -257,7 +276,10 @@ export class WorkflowDetailPage implements OnInit {
     const d = this.draft();
     if (!d) return;
     this.esig
-      .challenge({ entity: ENTITY, recordId: d.id, recordVersion: d.rowVersion, meaning: 'APPROVED', reason: c.reason, acknowledge: c.acknowledged, action: 'approve' })
+      .challenge({
+        entity: ENTITY, recordId: d.id, recordVersion: d.rowVersion, meaning: SIGNED_STEPS[this.signing()].meaning, reason: c.reason,
+        acknowledge: c.acknowledged, action: this.signing(),
+      })
       .subscribe({
         next: ({ challengeId }) => this.auth.reauthenticate(`/workflows/${d.id}?esig=${encodeURIComponent(challengeId)}`),
         error: (e: unknown) => {
@@ -270,7 +292,7 @@ export class WorkflowDetailPage implements OnInit {
   private completeSigning(challengeId: string): void {
     this.esig.complete(challengeId).subscribe({
       next: (s) => {
-        this.notice.set(`Signed: ${s.meaningLabel} by ${s.signerName}, version ${s.recordVersion}. Activate it to make new records use it.`);
+        this.notice.set(`Signed: ${s.meaningLabel} by ${s.signerName}, version ${s.recordVersion}. ${AFTER_SIGNATURE[s.meaning] ?? ''}`.trim());
         this.signatureRefresh.update((n) => n + 1);
         this.forgetChallenge();
         this.load();
@@ -332,16 +354,16 @@ export class WorkflowDetailPage implements OnInit {
     });
   }
 
-  run(step: DraftStep): void {
+  /** Rejecting signs nothing, so it is a plain call; the reason is required. */
+  reject(): void {
     const d = this.draft();
-    if (!d) return;
-    const comment = this.comment.value.trim() || null;
-    if (step === 'reject' && !comment) return;
+    const comment = this.comment.value.trim();
+    if (!d || !comment) return;
     this.busy.set(true);
-    this.api.step(d.id, this.etag, step, comment).subscribe({
+    this.api.reject(d.id, this.etag, comment).subscribe({
       next: ({ value, etag }) => {
         this.apply(value, etag);
-        this.notice.set(DONE[step]);
+        this.notice.set('Rejected. The draft can be edited again.');
       },
       error: (e: unknown) => this.fail(e),
     });
@@ -367,9 +389,3 @@ export class WorkflowDetailPage implements OnInit {
 }
 
 const ENTITY = 'wf.definition';
-
-const DONE: Record<DraftStep, string> = {
-  submit: 'Submitted for approval.',
-  reject: 'Rejected. The draft can be edited again.',
-  activate: 'Active. New records start on this version; records in progress keep theirs.',
-};

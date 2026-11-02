@@ -57,6 +57,7 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddSingleton<AuditTrailReader>();
 
 var app = builder.Build();
+WorkflowLog.Logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("PharmaOS.Workflow");
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();

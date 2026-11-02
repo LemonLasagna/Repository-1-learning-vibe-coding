@@ -27,6 +27,10 @@ public sealed class WorkflowActivationApiTests : IClassFixture<PostgresFixture>,
     private static readonly TestUser Approver = new(Guid.Parse("b8888888-0000-0000-0000-000000000002"), Tenant, "Ama Approver", "a.approver",
         Permissions.WorkflowApprove, Permissions.EsigSign);
 
+    /// <summary>May write and sign workflows, but not approve or release them.</summary>
+    private static readonly TestUser Writer = new(Guid.Parse("b8888888-0000-0000-0000-000000000003"), Tenant, "Wes Writer", "w.writer",
+        Permissions.WorkflowAuthor, Permissions.EsigSign);
+
     private const string NewLabel = "Send plan to QA";
 
     private readonly PostgresFixture _db;
@@ -86,6 +90,11 @@ public sealed class WorkflowActivationApiTests : IClassFixture<PostgresFixture>,
         Assert.Equal("ACTIVE", active.GetProperty("status").GetString());
         Assert.Equal(Owner.Sub, active.GetProperty("approvedBy").GetGuid());
         Assert.NotEqual(JsonValueKind.Null, active.GetProperty("approvalSignatureId").ValueKind);
+        Assert.NotEqual(JsonValueKind.Null, active.GetProperty("submissionSignatureId").ValueKind);
+        Assert.NotEqual(JsonValueKind.Null, active.GetProperty("activationSignatureId").ValueKind);
+        var signatures = await As(Owner).GetFromJsonAsync<JsonElement>($"/api/esig/v1/records/wf.definition/{id}/signatures");
+        Assert.Equal(["APPROVED", "RELEASED", "SUBMITTED"],
+            signatures.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("meaning").GetString()!).Order(StringComparer.Ordinal).ToArray());
 
         var after = await CapaAsync();
         Assert.Equal(NewLabel, await SubmitPlanLabelAsync(after));
@@ -131,12 +140,28 @@ public sealed class WorkflowActivationApiTests : IClassFixture<PostgresFixture>,
     }
 
     [Fact]
+    public async Task Releasing_a_draft_needs_the_approval_permission_and_an_approved_draft()
+    {
+        var (id, etag, _) = await Authoring.CreateAsync(As(Owner), Authoring.Capa(Authoring.NewVersion()));
+        var early = await Authoring.SignActivationAsync(_factory, Owner, id, Authoring.VersionOf(etag));
+        Assert.Equal("WRONG_STATUS", await Authoring.CodeOf(early));
+
+        etag = await Authoring.SubmitAsync(_factory, Owner, id, etag);
+        Assert.Equal(HttpStatusCode.Created, (await Authoring.SignApprovalAsync(_factory, Owner, id, Authoring.VersionOf(etag))).StatusCode);
+
+        var writer = await Authoring.SignActivationAsync(_factory, Writer, id, Authoring.VersionOf(await Authoring.EtagAsync(As(Owner), id)));
+        Assert.Equal(HttpStatusCode.Forbidden, writer.StatusCode);
+        Assert.Equal("MISSING_PERMISSION", await Authoring.CodeOf(writer));
+        Assert.Equal("APPROVED", (await As(Owner).GetFromJsonAsync<JsonElement>($"{Authoring.Base}/{id}")).GetProperty("status").GetString());
+    }
+
+    [Fact]
     public async Task With_the_second_person_rule_on_the_submitter_cannot_sign_the_approval_and_someone_else_can()
     {
         using var strict = new PlatformFactory(_db, settings: new Dictionary<string, string> { ["WorkflowAuthoring:RequireSecondPerson"] = "true" });
         var (id, etag, _) = await Authoring.CreateAsync(strict.ClientFor(Owner), Authoring.Capa(Authoring.NewVersion()));
-        var submit = await Authoring.StepAsync(strict.ClientFor(Owner), id, "submit", etag);
-        var version = Authoring.VersionOf(submit.Headers.ETag!.Tag);
+        etag = await Authoring.SubmitAsync(strict, Owner, id, etag);
+        var version = Authoring.VersionOf(etag);
 
         var self = await Authoring.SignApprovalAsync(strict, Owner, id, version);
         Assert.Equal(HttpStatusCode.Forbidden, self.StatusCode);
