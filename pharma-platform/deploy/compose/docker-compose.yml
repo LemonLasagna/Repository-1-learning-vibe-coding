@@ -4,6 +4,7 @@
 #   cp .env.example .env   # edit values
 #   docker compose up -d                       # infrastructure only (database, search, storage, IdP…)
 #   docker compose --profile app up -d         # + PharmaOS services (images from the local Harbor)
+#   docker compose --profile app build platform web   # build the two images that exist today from this checkout
 #   docker compose --profile analytics up -d   # + Apache Superset (non-GxP analytics)
 #
 # Image tags must be pinned to digests in production (IQ-INF-002). Tags here are for readability.
@@ -15,6 +16,12 @@ x-logging: &logging
   logging:
     driver: json-file
     options: {max-size: "50m", max-file: "5"}
+
+# What the PharmaOS images run under: not root, nothing writable but a scratch area, no extra privileges.
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
 
 services:
   postgres:
@@ -128,8 +135,12 @@ services:
     networks: [edge, app]
 
   platform:
-    <<: [*restart, *logging]
+    <<: [*restart, *logging, *hardened]
     profiles: [app]
+    build:
+      context: ../..
+      dockerfile: deploy/images/platform-host.Dockerfile
+    tmpfs: ["/tmp"]
     # Tier S runs the platform services (identity, config, workflow, esig, audit, notification,
     # document, reporting) as one host process to save memory; same code, different composition root.
     image: ${REGISTRY}/platform-host:${PHARMAOS_VERSION}
@@ -144,6 +155,8 @@ services:
       Keys__OpenBaoAddress: http://openbao:8200
       Rendering__GotenbergUrl: http://gotenberg:3000
       Oidc__Authority: https://${PUBLIC_HOSTNAME}/auth/realms/pharmaos
+      Oidc__PublicOrigin: https://${PUBLIC_HOSTNAME}   # where browsers reach the app: sign-in callbacks are built from it
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"      # trust X-Forwarded-* from the web image and the gateway (app network only)
       Telemetry__Export: none            # no outbound telemetry
     depends_on: {postgres: {condition: service_healthy}}
     networks: [app, data]
@@ -166,9 +179,15 @@ services:
     networks: [app, data]
 
   web:
-    <<: [*restart, *logging]
+    <<: [*restart, *logging, *hardened]
     profiles: [app]
+    build:
+      context: ../..
+      dockerfile: deploy/images/web.Dockerfile
     image: ${REGISTRY}/web:${PHARMAOS_VERSION}
+    # nginx writes its generated site file at start and its scratch files while running.
+    tmpfs: ["/tmp", "/etc/nginx/conf.d:uid=101,gid=101,mode=0755"]
+    depends_on: [platform]
     networks: [app]
 
   # ---------------- Analytics (profile: analytics; non-GxP) ----------------

@@ -12,5 +12,22 @@ component needs internet access at runtime.
 6. Configure backups: a PostgreSQL streaming standby on a second box, plus restic to LTO WORM tape or an
    immutable appliance (doc 16 §16.4).
 
-Status: `docker compose config` validates this file. The `app` profile images are not built yet; they are
-what the R0 release produces (doc 20). The infrastructure services use upstream open-source images.
+## Images
+
+Two application images exist, built from this checkout (`docker compose --profile app build platform web`):
+
+| Image | What it is |
+|---|---|
+| `platform-host` | The API and the browser session (BFF), from `src/Hosts/PharmaOS.Platform.Host`. Listens on 8080. |
+| `web` | The Angular app as static files behind nginx, which also hands `/api`, `/bff`, `/health` and the sign-in callbacks to the platform host. Listens on 8080. |
+
+Both run as an unprivileged user, with a read-only root file system, no added privileges and a health check. The
+Dockerfiles are in `../images`. The `images` workflow builds them and starts them from this file against a real database
+on every change that affects them.
+
+What is **not** here yet: the `gateway` (TLS in front of `web`), `domain` and `workers` images in the file have no code
+behind them, so they cannot be built. Base images are named by tag; production pins them by digest and signs the result
+when the release bundle is built (IQ-INF-002). Sign-in sessions are kept in the host's memory, so they end when the
+container restarts: users sign in again.
+
+The infrastructure services use upstream open-source images.

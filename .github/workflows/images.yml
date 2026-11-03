@@ -1,0 +1,91 @@
+name: images
+
+# Builds the two PharmaOS container images (platform-host and web) and starts them from the real compose file, with the real
+# database schema, the way an installation would: Postgres, the platform host and the web image behind it.
+on:
+  pull_request:
+    paths:
+      - "pharma-platform/deploy/**"
+      - "pharma-platform/src/**"
+      - "pharma-platform/web/**"
+      - "pharma-platform/database/**"
+      - "pharma-platform/Directory.*"
+      - "pharma-platform/global.json"
+      - "pharma-platform/.dockerignore"
+      - ".github/workflows/images.yml"
+  workflow_dispatch:
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: pharma-platform/deploy/compose
+    env:
+      COMPOSE: docker compose --profile app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Settings for a throwaway installation
+        run: |
+          mkdir -p "$RUNNER_TEMP/pharmaos/postgres" "$RUNNER_TEMP/pharmaos/wal-archive"
+          chmod -R 0777 "$RUNNER_TEMP/pharmaos"
+          cat > .env <<ENV
+          PHARMAOS_VERSION=ci
+          REGISTRY=local
+          DATA_ROOT=$RUNNER_TEMP/pharmaos
+          POSTGRES_PASSWORD=ci-postgres
+          PHARMAOS_APP_PASSWORD=ci-app
+          KEYCLOAK_ADMIN_PASSWORD=ci-keycloak
+          RABBITMQ_PASSWORD=ci-rabbit
+          S3_ACCESS_KEY=ci-s3
+          S3_SECRET_KEY=ci-s3-secret
+          SUPERSET_SECRET_KEY=ci-superset
+          PUBLIC_HOSTNAME=pharmaos.example.test
+          ENV
+      - name: The compose file is valid
+        run: $COMPOSE config --quiet
+      - name: Build the images
+        run: $COMPOSE build platform web
+      - name: Start the database, the platform host and the web image
+        run: $COMPOSE up -d postgres platform web
+      - name: Everything becomes healthy
+        run: |
+          for i in $(seq 1 60); do
+            states=$($COMPOSE ps --format '{{.Service}}={{.Health}}' postgres platform web | sort | tr '\n' ' ')
+            echo "$states"
+            [ "$states" = "platform=healthy postgres=healthy web=healthy " ] && exit 0
+            sleep 3
+          done
+          echo "Not healthy in time" >&2
+          exit 1
+      - name: The web image serves the app and reaches the platform host through its proxy
+        run: |
+          set -e
+          web() { $COMPOSE exec -T web "$@"; }
+          web wget -q -O - http://127.0.0.1:8080/ | grep -q "<app-root" && echo "the app is served"
+          web wget -q -O - http://127.0.0.1:8080/some/screen/path | grep -q "<app-root" && echo "other paths fall back to the app"
+          web wget -q -O - http://127.0.0.1:8080/health/live | grep -q live && echo "/health/live reaches the platform host"
+          web wget -q -O - http://127.0.0.1:8080/health/ready >/dev/null && echo "/health/ready: the platform host reaches the database as its own login"
+          code=$(web sh -c 'wget -S -O /dev/null http://127.0.0.1:8080/api/mdm/v1/uoms 2>&1 | head -n1' | grep -o ' [0-9][0-9][0-9] ' | tr -d ' ')
+          test "$code" = 401 && echo "the API answers 401 without a session"
+          web wget -S -O /dev/null http://127.0.0.1:8080/ 2>&1 | grep -qi "x-content-type-options: nosniff" && echo "security headers are set"
+      - name: The containers run as the images intend
+        run: |
+          set -e
+          for entry in platform:/app web:/usr/share/nginx/html; do
+            svc=${entry%%:*}; dir=${entry#*:}
+            uid=$($COMPOSE exec -T $svc id -u)
+            test "$uid" != 0 && echo "$svc runs as uid $uid, not root"
+            $COMPOSE exec -T $svc test -d "$dir"
+            if $COMPOSE exec -T $svc touch "$dir/x" 2>/dev/null; then echo "$svc can change its own files in $dir" >&2; exit 1; fi
+            echo "$svc cannot write to $dir"
+          done
+      - name: Logs
+        if: failure()
+        run: |
+          $COMPOSE ps -a || true
+          $COMPOSE logs --no-color --tail 80 platform web postgres || true
+      - name: Stop
+        if: always()
+        run: $COMPOSE down -v || true

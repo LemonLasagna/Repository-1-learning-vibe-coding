@@ -1,0 +1,13 @@
+# The build context is this folder. Keep out everything an image does not need, and anything that must never be baked in.
+**/bin
+**/obj
+**/node_modules
+web/dist
+web/.angular
+tests
+install-reports
+sbom
+pharmaos.env
+deploy/compose/.env
+deploy/compose/data
+.git
