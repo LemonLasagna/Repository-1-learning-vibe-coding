@@ -1,9 +1,7 @@
-using System.Security.Claims;
 using System.Text.Json.Nodes;
 using Npgsql;
 using NpgsqlTypes;
 using PharmaOS.Gxp;
-using PharmaOS.Platform.Host.ESignature;
 using PharmaOS.Workflow;
 using static PharmaOS.Platform.Host.Api.ApiResults;
 
@@ -15,7 +13,8 @@ public sealed record DraftInput(string Code, int Version, string InitialState, I
 public sealed record DraftRow(
     Guid Id, string Code, int Version, string InitialState, JsonArray Transitions, string Status, IReadOnlyList<string> Errors,
     Guid? SubmittedBy, DateTimeOffset? SubmittedAt, Guid? ApprovedBy, DateTimeOffset? ApprovedAt, string? DecisionComment,
-    DateTimeOffset? ActivatedAt, int RowVersion, DateTimeOffset UpdatedAt, Guid UpdatedBy, Guid? ApprovalSignatureId)
+    DateTimeOffset? ActivatedAt, int RowVersion, DateTimeOffset UpdatedAt, Guid UpdatedBy, Guid? ApprovalSignatureId,
+    Guid? SubmissionSignatureId, Guid? ActivationSignatureId)
 {
     public DraftInput ToInput() => new(Code, Version, InitialState, WorkflowStore.TransitionsFromJson(Transitions));
 }
@@ -36,7 +35,8 @@ public sealed class WorkflowDraftStore(NpgsqlConnection conn, NpgsqlTransaction 
 {
     private const string Columns = """
         id, code, version_no, initial_state, transitions::text, status, validation_errors::text, submitted_by, submitted_at,
-        approved_by, approved_at, decision_comment, activated_at, row_version, updated_at, updated_by, approval_signature_id
+        approved_by, approved_at, decision_comment, activated_at, row_version, updated_at, updated_by, approval_signature_id,
+        submission_signature_id, activation_signature_id
         """;
 
     private NpgsqlCommand Cmd(string sql) => new(sql, conn, tx);
@@ -164,7 +164,8 @@ public sealed class WorkflowDraftStore(NpgsqlConnection conn, NpgsqlTransaction 
         r.IsDBNull(7) ? null : r.GetGuid(7), r.IsDBNull(8) ? null : r.GetFieldValue<DateTimeOffset>(8),
         r.IsDBNull(9) ? null : r.GetGuid(9), r.IsDBNull(10) ? null : r.GetFieldValue<DateTimeOffset>(10),
         r.IsDBNull(11) ? null : r.GetString(11), r.IsDBNull(12) ? null : r.GetFieldValue<DateTimeOffset>(12),
-        r.GetInt32(13), r.GetFieldValue<DateTimeOffset>(14), r.GetGuid(15), r.IsDBNull(16) ? null : r.GetGuid(16));
+        r.GetInt32(13), r.GetFieldValue<DateTimeOffset>(14), r.GetGuid(15), r.IsDBNull(16) ? null : r.GetGuid(16),
+        r.IsDBNull(17) ? null : r.GetGuid(17), r.IsDBNull(18) ? null : r.GetGuid(18));
 
     private static string ErrorsJson(IReadOnlyList<string> errors) => new JsonArray([.. errors.Select(e => (JsonNode)JsonValue.Create(e)!)]).ToJsonString();
 }
@@ -193,10 +194,10 @@ public static class WorkflowAuthoringEndpoints
         group.MapGet("{id:guid}", Get).RequireAuthorization(Permissions.WorkflowAuthor);
         group.MapPut("{id:guid}", Replace).RequireAuthorization(Permissions.WorkflowAuthor);
         group.MapPost("{id:guid}/validate", Validate).RequireAuthorization(Permissions.WorkflowAuthor);
-        group.MapPost("{id:guid}/submit", Submit).RequireAuthorization(Permissions.WorkflowAuthor);
-        group.MapPost("{id:guid}/approve", ApproveNeedsSignature).RequireAuthorization(Permissions.WorkflowApprove);
+        group.MapPost("{id:guid}/submit", (Guid id) => NeedsSignature(id, WorkflowDraftSignable.Submit)).RequireAuthorization(Permissions.WorkflowAuthor);
+        group.MapPost("{id:guid}/approve", (Guid id) => NeedsSignature(id, WorkflowDraftSignable.Approve)).RequireAuthorization(Permissions.WorkflowApprove);
         group.MapPost("{id:guid}/reject", Reject).RequireAuthorization(Permissions.WorkflowApprove);
-        group.MapPost("{id:guid}/activate", Activate).RequireAuthorization(Permissions.WorkflowApprove);
+        group.MapPost("{id:guid}/activate", (Guid id) => NeedsSignature(id, WorkflowDraftSignable.Activate)).RequireAuthorization(Permissions.WorkflowApprove);
     }
 
     private static async Task<IResult> Create(
@@ -232,11 +233,13 @@ public static class WorkflowAuthoringEndpoints
         foreach (var code in BuiltInWorkflows.Codes)
         {
             var target = BuiltInWorkflows.Find(code)!;
-            var current = await wf.DefinitionIdAsync(code, ct) is { } id ? await wf.CurrentAsync(id, target.Release, ct) : target.Release;
+            var definitionId = await wf.DefinitionIdAsync(code, ct);
+            var current = definitionId is { } id ? await wf.CurrentAsync(id, target.Release, ct) : target.Release;
+            var notApplied = definitionId is { } did && await wf.ReleaseNotAppliedAsync(did, target.Release, ct);
             items.Add(new
             {
                 code, recordType = target.Noun, name = target.Name, version = current.Version, initialState = current.InitialState,
-                transitions = WorkflowStore.TransitionsJson(current.Transitions),
+                transitions = WorkflowStore.TransitionsJson(current.Transitions), releaseVersion = target.Release.Version, releaseNotApplied = notApplied,
             });
         }
         return Results.Ok(new { items });
@@ -300,28 +303,14 @@ public static class WorkflowAuthoringEndpoints
         return Results.Ok(new { valid = problems.Count == 0, errors = problems });
     }
 
-    private static Task<IResult> Submit(
-        Guid id, PlatformDbContext db, IGxpContextAccessor gxp, TimeProvider time, HttpContext http, CancellationToken ct) =>
-        StepAsync(id, db, gxp, http, ct, async (step) =>
-        {
-            if (step.Row.Status is not (Draft or Valid)) return WrongStatus(step.Row, "submitting", "DRAFT or VALID");
-            var (_, problems) = await CheckAsync(step.Store, step.Row.ToInput(), ct);
-            if (problems.Count > 0)
-                return Problem(StatusCodes.Status422UnprocessableEntity, "NOT_VALID", "Draft is not valid", string.Join(" ", problems));
-            return await step.SetAsync(new Dictionary<string, object?>
-            {
-                ["status"] = Submitted, ["submitted_by"] = step.Ctx.UserId, ["submitted_at"] = time.GetUtcNow(), ["decision_comment"] = null,
-            });
-        });
-
     /// <summary>
-    /// Approval is an electronic signature, so it cannot be done by a plain call: the client starts a signing challenge for entity
-    /// wf.definition (action approve, meaning APPROVED), confirms the password, and the signature and the approval commit together
-    /// (<see cref="WorkflowDraftSignable"/>).
+    /// Submitting, approving and activating a workflow are electronic signatures, so none of them can be done by a plain call: the
+    /// client starts a signing challenge for entity wf.definition with the action and its meaning, confirms the password, and the
+    /// signature and the step commit together (<see cref="WorkflowDraftSignable"/>). Only rejecting, which signs nothing, is a call.
     /// </summary>
-    private static IResult ApproveNeedsSignature(Guid id) =>
+    private static IResult NeedsSignature(Guid id, string action) =>
         Problem(StatusCodes.Status400BadRequest, "SIGNATURE_REQUIRED", "Signature required",
-            $"Approving a workflow is an electronic signature. Start it with POST /api/esig/v1/challenges (entity {WorkflowDraftSignable.Entity}, recordId {id}, action approve, meaning APPROVED).");
+            $"This step is an electronic signature. Start it with POST /api/esig/v1/challenges (entity {WorkflowDraftSignable.Entity}, recordId {id}, action {action}, meaning {WorkflowDraftSignable.MeaningOf[action]}).");
 
     private static Task<IResult> Reject(
         Guid id, DecisionBody? body, PlatformDbContext db, IGxpContextAccessor gxp, HttpContext http, CancellationToken ct) =>
@@ -333,35 +322,9 @@ public static class WorkflowAuthoringEndpoints
             return await step.SetAsync(new Dictionary<string, object?>
             {
                 ["status"] = status, ["validation_errors"] = problems, ["submitted_by"] = null, ["submitted_at"] = null,
-                ["approved_by"] = null, ["approved_at"] = null, ["approval_signature_id"] = null, ["decision_comment"] = body.Comment.Trim(),
+                ["approved_by"] = null, ["approved_at"] = null, ["approval_signature_id"] = null, ["submission_signature_id"] = null,
+                ["decision_comment"] = body.Comment.Trim(),
             });
-        });
-
-    /// <summary>Releases an approved draft as the newest version of its record type's workflow. New records start on it.</summary>
-    private static Task<IResult> Activate(
-        Guid id, PlatformDbContext db, IGxpContextAccessor gxp, SignableRegistry registry, TimeProvider time, ClaimsPrincipal user,
-        HttpContext http, CancellationToken ct) =>
-        StepAsync(id, db, gxp, http, ct, async (step) =>
-        {
-            if (step.Row.Status != Approved) return WrongStatus(step.Row, "activation", Approved);
-            if (step.Row.ApprovalSignatureId is null)
-                return Problem(StatusCodes.Status409Conflict, "NOT_SIGNED", "Approval not signed", "Only a signed approval can be activated.");
-            var input = step.Row.ToInput();
-            var (_, problems) = await CheckAsync(step.Store, input, ct);
-            if (problems.Count > 0)
-                return Problem(StatusCodes.Status409Conflict, "NO_LONGER_VALID", "Draft is no longer valid", string.Join(" ", problems));
-
-            var target = BuiltInWorkflows.Find(input.Code)!;
-            var esig = new EsigStore(step.Conn, step.Tx);
-            var wf = new WorkflowStore(step.Conn, step.Tx);
-            await esig.EnsureUserAsync(step.Ctx, user.Login(), user.DisplayName(), user.FindFirst("email")?.Value, ct);
-            var entityDefinitionId = await esig.EnsureEntityDefinitionAsync(step.Ctx, registry.Find(target.EntityCode)!, ct);
-            var definitionId = await wf.EnsureDefinitionAsync(step.Ctx, target.Release, target.Name, entityDefinitionId, ct);
-            await WorkflowTransitions.SetChangeReasonAsync(step.Conn, step.Tx, $"Workflow {input.Code} v{input.Version} activated from draft", ct);
-            await wf.WriteVersionAsync(step.Ctx, definitionId,
-                new WorkflowDefinition(input.Code, input.Version, input.InitialState, input.Transitions), ct);
-            await WorkflowTransitions.SetChangeReasonAsync(step.Conn, step.Tx, step.Ctx.ChangeReason, ct);
-            return await step.SetAsync(new Dictionary<string, object?> { ["status"] = Active, ["activated_at"] = time.GetUtcNow() });
         });
 
     public sealed record DecisionBody(string? Comment);
@@ -398,7 +361,7 @@ public static class WorkflowAuthoringEndpoints
     /// The rules a draft must pass: a well-formed definition (<see cref="DefinitionValidator"/>), one its record type can run
     /// (<see cref="BuiltInWorkflows"/>), and a version newer than anything released for the code, including the code's own release.
     /// </summary>
-    private static async Task<(string Status, IReadOnlyList<string> Problems)> CheckAsync(
+    internal static async Task<(string Status, IReadOnlyList<string> Problems)> CheckAsync(
         WorkflowDraftStore store, DraftInput input, CancellationToken ct)
     {
         var problems = new List<string>(DefinitionValidator.Validate(input.Code, input.Version, input.InitialState, input.Transitions));
@@ -478,10 +441,12 @@ public static class WorkflowAuthoringEndpoints
     private sealed record DraftResponse(
         Guid Id, string Code, int Version, string InitialState, JsonArray Transitions, string Status, IReadOnlyList<string> Errors,
         Guid? SubmittedBy, DateTimeOffset? SubmittedAt, Guid? ApprovedBy, DateTimeOffset? ApprovedAt, string? DecisionComment,
-        DateTimeOffset? ActivatedAt, int RowVersion, DateTimeOffset UpdatedAt, Guid? ApprovalSignatureId)
+        DateTimeOffset? ActivatedAt, int RowVersion, DateTimeOffset UpdatedAt, Guid? ApprovalSignatureId, Guid? SubmissionSignatureId,
+        Guid? ActivationSignatureId)
     {
         public static DraftResponse From(DraftRow r) =>
             new(r.Id, r.Code, r.Version, r.InitialState, r.Transitions, r.Status, r.Errors, r.SubmittedBy, r.SubmittedAt, r.ApprovedBy,
-                r.ApprovedAt, r.DecisionComment, r.ActivatedAt, r.RowVersion, r.UpdatedAt, r.ApprovalSignatureId);
+                r.ApprovedAt, r.DecisionComment, r.ActivatedAt, r.RowVersion, r.UpdatedAt, r.ApprovalSignatureId, r.SubmissionSignatureId,
+                r.ActivationSignatureId);
     }
 }

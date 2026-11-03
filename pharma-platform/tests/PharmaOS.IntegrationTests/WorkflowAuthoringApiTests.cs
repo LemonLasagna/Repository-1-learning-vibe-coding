@@ -58,12 +58,13 @@ internal static class Authoring
     public static async Task<string> EtagAsync(HttpClient client, Guid id) =>
         (await client.GetAsync($"{Base}/{id}")).Headers.ETag!.Tag;
 
-    /// <summary>Approving is an electronic signature: a challenge, then the completion as if the password had just been typed.</summary>
-    public static async Task<HttpResponseMessage> SignApprovalAsync(PlatformFactory factory, TestUser user, Guid id, int recordVersion, string? reason = null)
+    /// <summary>Every step but rejecting is an electronic signature: a challenge, then the completion as if the password had just been typed.</summary>
+    public static async Task<HttpResponseMessage> SignAsync(
+        PlatformFactory factory, TestUser user, Guid id, string action, string meaning, int recordVersion, string? reason = null)
     {
         var challenge = await factory.ClientFor(user).PostAsJsonAsync("/api/esig/v1/challenges", new
         {
-            entity = "wf.definition", recordId = id, recordVersion, meaning = "APPROVED", reason, acknowledge = true, action = "approve",
+            entity = "wf.definition", recordId = id, recordVersion, meaning, reason, acknowledge = true, action,
         });
         if (challenge.StatusCode != HttpStatusCode.Created) return challenge;
         var challengeId = (await challenge.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("challengeId").GetGuid();
@@ -71,17 +72,33 @@ internal static class Authoring
             .PostAsync($"/api/esig/v1/challenges/{challengeId}/complete", null);
     }
 
-    /// <summary>Submit, sign the approval and activate, as one user who holds every permission. Returns the draft's final ETag.</summary>
+    public static Task<HttpResponseMessage> SignSubmitAsync(PlatformFactory factory, TestUser user, Guid id, int recordVersion, string? reason = null) =>
+        SignAsync(factory, user, id, "submit", "SUBMITTED", recordVersion, reason);
+
+    public static Task<HttpResponseMessage> SignApprovalAsync(PlatformFactory factory, TestUser user, Guid id, int recordVersion, string? reason = null) =>
+        SignAsync(factory, user, id, "approve", "APPROVED", recordVersion, reason);
+
+    public static Task<HttpResponseMessage> SignActivationAsync(PlatformFactory factory, TestUser user, Guid id, int recordVersion, string? reason = null) =>
+        SignAsync(factory, user, id, "activate", "RELEASED", recordVersion, reason);
+
+    /// <summary>Signs the submission (the draft is at <paramref name="etag"/>) and returns the draft's new ETag.</summary>
+    public static async Task<string> SubmitAsync(PlatformFactory factory, TestUser user, Guid id, string etag)
+    {
+        var signed = await SignSubmitAsync(factory, user, id, VersionOf(etag));
+        Assert.Equal(HttpStatusCode.Created, signed.StatusCode);
+        return await EtagAsync(factory.ClientFor(user), id);
+    }
+
+    /// <summary>Submit, approve and activate, each signed, as one user who holds every permission. Returns the draft's final ETag.</summary>
     public static async Task<string> SubmitSignActivateAsync(PlatformFactory factory, TestUser user, Guid id, string etag)
     {
         var client = factory.ClientFor(user);
-        var submit = await StepAsync(client, id, "submit", etag);
-        Assert.Equal(HttpStatusCode.OK, submit.StatusCode);
-        var signed = await SignApprovalAsync(factory, user, id, VersionOf(submit.Headers.ETag!.Tag));
-        Assert.Equal(HttpStatusCode.Created, signed.StatusCode);
-        var activate = await StepAsync(client, id, "activate", await EtagAsync(client, id));
-        Assert.Equal(HttpStatusCode.OK, activate.StatusCode);
-        return activate.Headers.ETag!.Tag;
+        etag = await SubmitAsync(factory, user, id, etag);
+        var approved = await SignApprovalAsync(factory, user, id, VersionOf(etag));
+        Assert.Equal(HttpStatusCode.Created, approved.StatusCode);
+        var activated = await SignActivationAsync(factory, user, id, VersionOf(await EtagAsync(client, id)));
+        Assert.Equal(HttpStatusCode.Created, activated.StatusCode);
+        return await EtagAsync(client, id);
     }
 
     public static async Task<string> CodeOf(HttpResponseMessage res) =>
@@ -285,11 +302,11 @@ public sealed class WorkflowAuthoringApiTests : IClassFixture<PostgresFixture>, 
     }
 
     [Fact]
-    public async Task A_draft_that_is_not_valid_cannot_be_submitted()
+    public async Task A_draft_that_is_not_valid_cannot_be_signed_for_submission()
     {
         var (id, etag, _) = await Authoring.CreateAsync(As(Author),
             Authoring.Capa(Authoring.NewVersion(), t => t.Action == "cancel" ? t with { Permission = null } : t));
-        var res = await Authoring.StepAsync(As(Author), id, "submit", etag);
+        var res = await Authoring.SignSubmitAsync(_factory, Author, id, Authoring.VersionOf(etag));
         Assert.Equal(HttpStatusCode.UnprocessableEntity, res.StatusCode);
         Assert.Equal("NOT_VALID", await Authoring.CodeOf(res));
     }
@@ -298,19 +315,20 @@ public sealed class WorkflowAuthoringApiTests : IClassFixture<PostgresFixture>, 
     public async Task A_submitted_draft_is_locked_until_it_is_rejected_with_a_reason()
     {
         var (id, etag, _) = await Authoring.CreateAsync(As(Author), Authoring.Capa(Authoring.NewVersion()));
-        var submit = await Authoring.StepAsync(As(Author), id, "submit", etag);
-        Assert.Equal(HttpStatusCode.OK, submit.StatusCode);
-        etag = submit.Headers.ETag!.Tag;
-        var submitted = await submit.Content.ReadFromJsonAsync<JsonElement>();
+        etag = await Authoring.SubmitAsync(_factory, Author, id, etag);
+        var submitted = await As(Author).GetFromJsonAsync<JsonElement>($"{Base}/{id}");
         Assert.Equal("SUBMITTED", submitted.GetProperty("status").GetString());
         Assert.Equal(Author.Sub, submitted.GetProperty("submittedBy").GetGuid());
+        Assert.NotEqual(JsonValueKind.Null, submitted.GetProperty("submissionSignatureId").ValueKind);
 
         var edit = await As(Author).SendAsync(new HttpRequestMessage(HttpMethod.Put, $"{Base}/{id}")
             { Content = JsonContent.Create(Authoring.Capa(Authoring.NewVersion())) }.WithHeaders(ifMatch: etag));
         Assert.Equal(HttpStatusCode.Conflict, edit.StatusCode);
         Assert.Equal("WRONG_STATUS", await Authoring.CodeOf(edit));
 
-        var activateEarly = await Authoring.StepAsync(As(Author), id, "activate", etag);
+        var submitAgain = await Authoring.SignSubmitAsync(_factory, Author, id, Authoring.VersionOf(etag));
+        Assert.Equal("WRONG_STATUS", await Authoring.CodeOf(submitAgain));
+        var activateEarly = await Authoring.SignActivationAsync(_factory, Author, id, Authoring.VersionOf(etag));
         Assert.Equal("WRONG_STATUS", await Authoring.CodeOf(activateEarly));
 
         var noReason = await Authoring.StepAsync(As(Author), id, "reject", etag);
@@ -322,14 +340,14 @@ public sealed class WorkflowAuthoringApiTests : IClassFixture<PostgresFixture>, 
         Assert.Equal("VALID", rejected.GetProperty("status").GetString());
         Assert.Equal("Labels need work.", rejected.GetProperty("decisionComment").GetString());
         Assert.Equal(JsonValueKind.Null, rejected.GetProperty("submittedBy").ValueKind);
+        Assert.Equal(JsonValueKind.Null, rejected.GetProperty("submissionSignatureId").ValueKind);
     }
 
     [Fact]
-    public async Task Approving_needs_the_approval_permission()
+    public async Task A_plain_call_to_approve_needs_the_approval_permission()
     {
         var (id, etag, _) = await Authoring.CreateAsync(As(AuthorOnly), Authoring.Capa(Authoring.NewVersion()));
-        var submit = await Authoring.StepAsync(As(AuthorOnly), id, "submit", etag);
-        var res = await Authoring.StepAsync(As(AuthorOnly), id, "approve", submit.Headers.ETag!.Tag);
+        var res = await Authoring.StepAsync(As(AuthorOnly), id, "approve", etag);
         Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
     }
 
@@ -341,25 +359,41 @@ public sealed class WorkflowAuthoringApiTests : IClassFixture<PostgresFixture>, 
         var capa = items.Single(i => i.GetProperty("code").GetString() == "CAPA_STD");
         Assert.Equal(CapaWorkflow.Definition.Version, capa.GetProperty("version").GetInt32());
         Assert.Equal(CapaWorkflow.Definition.Transitions.Count, capa.GetProperty("transitions").GetArrayLength());
+        Assert.Equal(CapaWorkflow.Definition.Version, capa.GetProperty("releaseVersion").GetInt32());
+        Assert.All(items, i => Assert.False(i.GetProperty("releaseNotApplied").GetBoolean()));
+    }
+
+    [Theory]
+    [InlineData("submit", "SUBMITTED")]
+    [InlineData("approve", "APPROVED")]
+    [InlineData("activate", "RELEASED")]
+    public async Task A_plain_call_to_a_signed_step_says_the_step_is_a_signature(string step, string meaning)
+    {
+        var (id, etag, _) = await Authoring.CreateAsync(As(Author), Authoring.Capa(Authoring.NewVersion()));
+        var res = await Authoring.StepAsync(As(Author), id, step, etag);
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        var problem = await res.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("SIGNATURE_REQUIRED", problem.GetProperty("code").GetString());
+        Assert.Contains($"action {step}, meaning {meaning}", problem.GetProperty("detail").GetString());
+        Assert.Equal("VALID", (await As(Author).GetFromJsonAsync<JsonElement>($"{Base}/{id}")).GetProperty("status").GetString());
     }
 
     [Fact]
-    public async Task A_plain_approve_call_says_the_approval_is_a_signature()
+    public async Task Signing_the_submission_needs_the_authoring_permission()
     {
         var (id, etag, _) = await Authoring.CreateAsync(As(Author), Authoring.Capa(Authoring.NewVersion()));
-        var submit = await Authoring.StepAsync(As(Author), id, "submit", etag);
-        var res = await Authoring.StepAsync(As(Author), id, "approve", submit.Headers.ETag!.Tag);
-        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
-        Assert.Equal("SIGNATURE_REQUIRED", await Authoring.CodeOf(res));
-        Assert.Equal("SUBMITTED", (await As(Author).GetFromJsonAsync<JsonElement>($"{Base}/{id}")).GetProperty("status").GetString());
+        var reader = new TestUser(Guid.Parse("b7777777-0000-0000-0000-000000000005"), Tenant, "Rae Reader", "r.reader", Permissions.EsigSign);
+        var res = await Authoring.SignSubmitAsync(_factory, reader, id, Authoring.VersionOf(etag));
+        Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
+        Assert.Equal("MISSING_PERMISSION", await Authoring.CodeOf(res));
     }
 
     [Fact]
     public async Task Signing_the_approval_needs_the_approval_permission()
     {
         var (id, etag, _) = await Authoring.CreateAsync(As(Signer), Authoring.Capa(Authoring.NewVersion()));
-        var submit = await Authoring.StepAsync(As(Signer), id, "submit", etag);
-        var res = await Authoring.SignApprovalAsync(_factory, Signer, id, Authoring.VersionOf(submit.Headers.ETag!.Tag));
+        etag = await Authoring.SubmitAsync(_factory, Signer, id, etag);
+        var res = await Authoring.SignApprovalAsync(_factory, Signer, id, Authoring.VersionOf(etag));
         Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
         Assert.Equal("MISSING_PERMISSION", await Authoring.CodeOf(res));
     }
@@ -374,41 +408,56 @@ public sealed class WorkflowAuthoringApiTests : IClassFixture<PostgresFixture>, 
     }
 
     [Fact]
-    public async Task A_signed_approval_records_the_signature_on_the_draft_and_binds_it_to_the_content()
+    public async Task A_step_is_signed_with_its_own_meaning_only()
     {
         var (id, etag, _) = await Authoring.CreateAsync(As(Author), Authoring.Capa(Authoring.NewVersion()));
-        var submit = await Authoring.StepAsync(As(Author), id, "submit", etag);
-        var signed = await Authoring.SignApprovalAsync(_factory, Author, id, Authoring.VersionOf(submit.Headers.ETag!.Tag), "Checked against the SOP.");
+        var wrong = await Authoring.SignAsync(_factory, Author, id, "submit", "APPROVED", Authoring.VersionOf(etag));
+        Assert.Equal(HttpStatusCode.BadRequest, wrong.StatusCode);
+        Assert.Equal("WRONG_MEANING", await Authoring.CodeOf(wrong));
+        var unknown = await Authoring.SignAsync(_factory, Author, id, "reject", "APPROVED", Authoring.VersionOf(etag));
+        Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
+        Assert.Equal("ACTION_NOT_SUPPORTED", await Authoring.CodeOf(unknown));
+    }
+
+    [Fact]
+    public async Task Submission_and_approval_are_signed_and_bound_to_the_content()
+    {
+        var (id, etag, _) = await Authoring.CreateAsync(As(Author), Authoring.Capa(Authoring.NewVersion()));
+        etag = await Authoring.SubmitAsync(_factory, Author, id, etag);
+        var signed = await Authoring.SignApprovalAsync(_factory, Author, id, Authoring.VersionOf(etag), "Checked against the SOP.");
         Assert.Equal(HttpStatusCode.Created, signed.StatusCode);
         var signature = await signed.Content.ReadFromJsonAsync<JsonElement>();
 
         var draft = await As(Author).GetFromJsonAsync<JsonElement>($"{Base}/{id}");
         Assert.Equal("APPROVED", draft.GetProperty("status").GetString());
         Assert.Equal(signature.GetProperty("id").GetGuid(), draft.GetProperty("approvalSignatureId").GetGuid());
+        Assert.NotEqual(JsonValueKind.Null, draft.GetProperty("submissionSignatureId").ValueKind);
         Assert.Equal(Author.Sub, draft.GetProperty("approvedBy").GetGuid());
         Assert.Equal("Checked against the SOP.", draft.GetProperty("decisionComment").GetString());
         Assert.Equal("APPROVED", signature.GetProperty("meaning").GetString());
         Assert.Matches("^[0-9a-f]{64}$", signature.GetProperty("recordHash").GetString());
 
         var listed = await As(Author).GetFromJsonAsync<JsonElement>($"/api/esig/v1/records/wf.definition/{id}/signatures");
-        Assert.Single(listed.GetProperty("items").EnumerateArray());
+        var meanings = listed.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("meaning").GetString()!).Order(StringComparer.Ordinal).ToArray();
+        Assert.Equal(["APPROVED", "SUBMITTED"], meanings);
     }
 
     [Fact]
-    public async Task Rejecting_an_approved_draft_clears_the_link_to_its_signature()
+    public async Task Rejecting_an_approved_draft_clears_the_links_to_its_signatures()
     {
         var (id, etag, _) = await Authoring.CreateAsync(As(Author), Authoring.Capa(Authoring.NewVersion()));
-        var submit = await Authoring.StepAsync(As(Author), id, "submit", etag);
-        await Authoring.SignApprovalAsync(_factory, Author, id, Authoring.VersionOf(submit.Headers.ETag!.Tag));
+        etag = await Authoring.SubmitAsync(_factory, Author, id, etag);
+        await Authoring.SignApprovalAsync(_factory, Author, id, Authoring.VersionOf(etag));
         var reject = await Authoring.StepAsync(As(Author), id, "reject", await Authoring.EtagAsync(As(Author), id), new { comment = "Changed my mind." });
         Assert.Equal(HttpStatusCode.OK, reject.StatusCode);
         var draft = await reject.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("VALID", draft.GetProperty("status").GetString());
         Assert.Equal(JsonValueKind.Null, draft.GetProperty("approvalSignatureId").ValueKind);
+        Assert.Equal(JsonValueKind.Null, draft.GetProperty("submissionSignatureId").ValueKind);
     }
 
     [Fact]
-    public async Task An_approved_draft_without_a_signed_approval_cannot_be_activated()
+    public async Task An_approved_draft_without_a_signed_approval_cannot_be_signed_for_activation()
     {
         var (id, _, _) = await Authoring.CreateAsync(As(Author), Authoring.Capa(Authoring.NewVersion()));
         // No endpoint reaches APPROVED without a signature, so the status is set directly, as a corrupted or tampered row would be.
@@ -425,7 +474,7 @@ public sealed class WorkflowAuthoringApiTests : IClassFixture<PostgresFixture>, 
             update.Parameters.AddWithValue("id", id);
             Assert.Equal(1, await update.ExecuteNonQueryAsync());
         }
-        var res = await Authoring.StepAsync(As(Author), id, "activate", await Authoring.EtagAsync(As(Author), id));
+        var res = await Authoring.SignActivationAsync(_factory, Author, id, Authoring.VersionOf(await Authoring.EtagAsync(As(Author), id)));
         Assert.Equal(HttpStatusCode.Conflict, res.StatusCode);
         Assert.Equal("NOT_SIGNED", await Authoring.CodeOf(res));
     }

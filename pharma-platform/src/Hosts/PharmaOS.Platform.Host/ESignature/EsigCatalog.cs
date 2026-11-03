@@ -54,7 +54,20 @@ public static class EsigCatalog
         "CANCELLED", "Cancelled", "I cancel this record for the reason given.",
         RequireReason: true, RequireSecondPerson: false, ConflictingMeanings: new HashSet<string>());
 
-    public static readonly IReadOnlyList<MeaningDefinition> Meanings = [Authored, Reviewed, Approved, Verified, Cancelled];
+    /// <summary>
+    /// Handing a record over for approval. Unlike Authored it does not conflict with Approved, so an installation run by one person
+    /// can submit and approve its own workflow definitions (the rule that forbids it is the WorkflowAuthoring:RequireSecondPerson setting).
+    /// </summary>
+    public static readonly MeaningDefinition Submitted = new(
+        "SUBMITTED", "Submitted", "I submit this record for approval and confirm that it is complete and correct to the best of my knowledge.",
+        RequireReason: false, RequireSecondPerson: false, ConflictingMeanings: new HashSet<string>());
+
+    /// <summary>Putting an approved record into use, so that it governs new work from now on.</summary>
+    public static readonly MeaningDefinition Released = new(
+        "RELEASED", "Released", "I release this record for use. From now on it governs new work.",
+        RequireReason: false, RequireSecondPerson: false, ConflictingMeanings: new HashSet<string>());
+
+    public static readonly IReadOnlyList<MeaningDefinition> Meanings = [Authored, Reviewed, Approved, Verified, Cancelled, Submitted, Released];
 
     public static MeaningDefinition? FindMeaning(string? code) =>
         Meanings.FirstOrDefault(m => string.Equals(m.Code, code, StringComparison.Ordinal));

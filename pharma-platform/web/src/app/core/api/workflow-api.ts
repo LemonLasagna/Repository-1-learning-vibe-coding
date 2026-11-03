@@ -23,6 +23,10 @@ export interface CurrentWorkflow {
   version: number;
   initialState: string;
   transitions: WorkflowTransition[];
+  /** The version the code's own release defines. */
+  releaseVersion: number;
+  /** True when an activated draft holds that number with different content, so the release could not be applied. */
+  releaseNotApplied: boolean;
 }
 
 export type DraftStatus = 'DRAFT' | 'VALID' | 'SUBMITTED' | 'APPROVED' | 'ACTIVE' | 'CANCELLED';
@@ -41,8 +45,10 @@ export interface WorkflowDraft {
   approvedAt: string | null;
   decisionComment: string | null;
   activatedAt: string | null;
-  /** Set once the approval was signed (entity wf.definition, meaning APPROVED). */
+  /** The signatures (entity wf.definition) that took the draft through each step; null until that step was signed. */
+  submissionSignatureId: string | null;
   approvalSignatureId: string | null;
+  activationSignatureId: string | null;
   rowVersion: number;
   updatedAt: string;
 }
@@ -54,8 +60,24 @@ export interface DraftContent {
   transitions: WorkflowTransition[];
 }
 
-/** Approving is not a step: it is an electronic signature (EsigApi, entity wf.definition, action approve). */
-export type DraftStep = 'submit' | 'reject' | 'activate';
+/**
+ * Submitting, approving and activating are electronic signatures (EsigApi, entity wf.definition, with the action and its meaning);
+ * the step and the signature commit together. Only rejecting, which signs nothing, is a plain call.
+ */
+export type SignedStep = 'submit' | 'approve' | 'activate';
+
+export const SIGNED_STEPS: Record<SignedStep, { meaning: string; button: string }> = {
+  submit: { meaning: 'SUBMITTED', button: 'Submit and sign…' },
+  approve: { meaning: 'APPROVED', button: 'Approve and sign…' },
+  activate: { meaning: 'RELEASED', button: 'Activate and sign…' },
+};
+
+/** What follows a signature, by its meaning. */
+export const AFTER_SIGNATURE: Record<string, string> = {
+  SUBMITTED: 'It now waits for approval.',
+  APPROVED: 'Activate it to make new records use it.',
+  RELEASED: 'New records start on this version; records in progress keep theirs.',
+};
 
 export const DRAFT_STATUS_LABELS: Record<DraftStatus, string> = {
   DRAFT: 'Draft (has problems)',
@@ -96,9 +118,9 @@ export class WorkflowApi {
     return this.http.post<{ valid: boolean; errors: string[] }>(`${this.base}/${id}/validate`, {});
   }
 
-  /** Submit, reject (needs a comment) or activate, at the version last read. */
-  step(id: string, etag: string, step: DraftStep, comment: string | null): Observable<Versioned<WorkflowDraft>> {
-    return this.send('POST', `${this.base}/${id}/${step}`, etag, { comment });
+  /** Rejects a submitted or approved draft, at the version last read. The reason is required. */
+  reject(id: string, etag: string, comment: string): Observable<Versioned<WorkflowDraft>> {
+    return this.send('POST', `${this.base}/${id}/reject`, etag, { comment });
   }
 
   private send(method: string, url: string, etag: string, body: unknown): Observable<Versioned<WorkflowDraft>> {
