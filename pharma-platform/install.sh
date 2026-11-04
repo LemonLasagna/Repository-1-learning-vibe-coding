@@ -393,10 +393,10 @@ if $DO_BACKEND; then
   run_logged "backend build (warnings are errors)" "$LOGS/dotnet-build.log" dotnet build PharmaOS.slnx -c Release
   run_logged "backend unit tests" "$LOGS/unit-tests.log" dotnet test tests/PharmaOS.UnitTests -c Release --no-build
   UNIT_COUNTS="$(test_counts "$LOGS/unit-tests.log")"
-  # Integration tests create and drop their own pharmaos_it_* database.
+  # Integration tests create and drop their own pharmaos_it_* database. The OpenBao ones need a running OpenBao and have their own CI job.
   PHARMAOS_TEST_PG="Host=$PG_HOST;Port=$PG_PORT;Username=$PG_SUPERUSER;Password=$PGPASSWORD" \
     run_logged "backend integration tests" "$LOGS/integration-tests.log" \
-    dotnet test tests/PharmaOS.IntegrationTests -c Release --no-build
+    dotnet test tests/PharmaOS.IntegrationTests -c Release --no-build --filter "Category!=OpenBao"
   INT_COUNTS="$(test_counts "$LOGS/integration-tests.log")"
   ok "unit tests: $UNIT_COUNTS; integration tests: $INT_COUNTS"
   BACKEND_RESULT="0 warnings; unit $UNIT_COUNTS; integration $INT_COUNTS"

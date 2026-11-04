@@ -325,7 +325,8 @@ What the target installation looks like (details in `deploy/compose/README.md` a
 3. **Start the supporting services:** `docker compose up -d`. On first start, PostgreSQL loads the schema
    and runs the data-integrity tests. Check with
    `docker compose logs postgres | grep "ALL DATA-INTEGRITY TESTS PASSED"`.
-4. **Initialise OpenBao** (`bao operator init`) and hand the unseal key shares to named custodians.
+4. **Initialise OpenBao** (`bao operator init`) and hand the unseal key shares to named custodians. Then run
+   `deploy/compose/openbao-bootstrap.sh --new-secret-id` with an admin token and put the role id and secret id it prints in `.env`.
 5. **Import the signed release bundle** into the local registry and start the application:
    `docker compose --profile app up -d`. *(Blocked until release images exist.)*
 6. **Configure backups:** a PostgreSQL streaming standby, plus restic to WORM tape or an immutable

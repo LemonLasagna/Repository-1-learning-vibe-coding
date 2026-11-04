@@ -153,6 +153,8 @@ services:
       Storage__AccessKey: ${S3_ACCESS_KEY}
       Storage__SecretKey: ${S3_SECRET_KEY}
       Keys__OpenBaoAddress: http://openbao:8200
+      Keys__AppRoleId: ${OPENBAO_ROLE_ID:-}            # from deploy/compose/openbao-bootstrap.sh; empty leaves package signing off
+      Keys__AppRoleSecretId: ${OPENBAO_SECRET_ID:-}
       Rendering__GotenbergUrl: http://gotenberg:3000
       Oidc__Authority: https://${PUBLIC_HOSTNAME}/auth/realms/pharmaos
       Oidc__PublicOrigin: https://${PUBLIC_HOSTNAME}   # where browsers reach the app: sign-in callbacks are built from it
