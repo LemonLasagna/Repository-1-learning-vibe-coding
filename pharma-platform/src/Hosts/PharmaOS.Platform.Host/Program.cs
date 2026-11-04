@@ -4,6 +4,7 @@ using PharmaOS.Gxp;
 using PharmaOS.Persistence;
 using PharmaOS.Platform.Host;
 using PharmaOS.Platform.Host.Audit;
+using PharmaOS.Platform.Host.ConfigPackages;
 using PharmaOS.Platform.Host.ESignature;
 using PharmaOS.Platform.Host.Keys;
 using PharmaOS.Platform.Host.MasterData;
@@ -35,12 +36,15 @@ builder.Services.AddAuthorizationBuilder()
     .AddPermissionPolicy(Permissions.ChangeRead)
     .AddPermissionPolicy(Permissions.ChangeWrite)
     .AddPermissionPolicy(Permissions.WorkflowAuthor)
-    .AddPermissionPolicy(Permissions.WorkflowApprove);
+    .AddPermissionPolicy(Permissions.WorkflowApprove)
+    .AddPermissionPolicy(Permissions.ConfigPackageAuthor)
+    .AddPermissionPolicy(Permissions.ConfigPackageApprove);
 builder.Services.Configure<WorkflowAuthoringOptions>(builder.Configuration.GetSection(WorkflowAuthoringOptions.Section));
 builder.Services.AddSingleton(TimeProvider.System);
 
 // Signing keys live in OpenBao; the host only asks for signatures (doc 14).
 builder.Services.Configure<OpenBaoOptions>(builder.Configuration.GetSection(OpenBaoOptions.Section));
+builder.Services.Configure<ConfigPackageOptions>(builder.Configuration.GetSection(ConfigPackageOptions.Section));
 builder.Services.AddHttpClient<IPackageSigner, OpenBaoTransitSigner>();
 builder.Services.AddHttpClient(OpenBaoTokenSource.ClientName);
 builder.Services.AddSingleton<OpenBaoTokenSource>();
@@ -49,6 +53,7 @@ builder.Services.AddSingleton<ISignableSource, DeviationSignable>();
 builder.Services.AddSingleton<ISignableSource, CapaSignable>();
 builder.Services.AddSingleton<ISignableSource, ChangeSignable>();
 builder.Services.AddSingleton<ISignableSource, WorkflowDraftSignable>();
+builder.Services.AddSingleton<ISignableSource, PackageSignable>();
 builder.Services.AddSingleton<IInboxSource, DeviationInbox>();
 builder.Services.AddSingleton<IInboxSource, CapaInbox>();
 builder.Services.AddSingleton<IInboxSource, ChangeInbox>();
@@ -85,6 +90,7 @@ app.MapDeviationEndpoints();
 app.MapCapaEndpoints();
 app.MapChangeEndpoints();
 app.MapWorkflowAuthoringEndpoints();
+app.MapConfigPackageEndpoints();
 app.MapInboxEndpoints();
 
 app.Run();

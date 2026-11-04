@@ -86,7 +86,7 @@ list_view_definition | entity_definition_id:>meta.entity_definition!, code:c!*, 
 document_template V | code:c!*, name:s!, template_type:st!, entity_definition_id:>meta.entity_definition, stored_object_id:>file.stored_object, merge_fields:j
 email_template V | code:c!*, name:s!, subject_template:l!, body_template:t!, locale:c!
 audit_policy V | entity_definition_id:>meta.entity_definition!, field_definition_id:>meta.field_definition, capture_mode:st!, reason_required:bool!, review_frequency_days:i
-config_package W | code:c!*, name:s!, version_label:c!, source_environment:c!, content_hash:h!, manifest:j!, status:st!
+config_package W | code:c!*, name:s!, version_label:c!, source_environment:c!, content_hash:h!, manifest:j!, status:st!, kms_signature:t, signing_key_name:c, signing_key_version:i, approved_by:u, approved_at:ts, approval_signature_id:>esig.signature, exported_at:ts, import_log:j
 config_package_item | config_package_id:>meta.config_package!, artifact_type:st!, artifact_id:u!, artifact_version:c!, payload:j!
 config_deployment | config_package_id:>meta.config_package!, target_environment:c!, deployed_at:ts!, deployed_by:>iam.app_user!, result:st!, log:t
 localization_resource | locale:c!, resource_key:s!, value:t! | U(locale,resource_key)
