@@ -5,6 +5,7 @@ using PharmaOS.Persistence;
 using PharmaOS.Platform.Host;
 using PharmaOS.Platform.Host.Audit;
 using PharmaOS.Platform.Host.ESignature;
+using PharmaOS.Platform.Host.Keys;
 using PharmaOS.Platform.Host.MasterData;
 using PharmaOS.Platform.Host.Qms;
 using PharmaOS.Platform.Host.Security;
@@ -37,6 +38,12 @@ builder.Services.AddAuthorizationBuilder()
     .AddPermissionPolicy(Permissions.WorkflowApprove);
 builder.Services.Configure<WorkflowAuthoringOptions>(builder.Configuration.GetSection(WorkflowAuthoringOptions.Section));
 builder.Services.AddSingleton(TimeProvider.System);
+
+// Signing keys live in OpenBao; the host only asks for signatures (doc 14).
+builder.Services.Configure<OpenBaoOptions>(builder.Configuration.GetSection(OpenBaoOptions.Section));
+builder.Services.AddHttpClient<IPackageSigner, OpenBaoTransitSigner>();
+builder.Services.AddHttpClient(OpenBaoTokenSource.ClientName);
+builder.Services.AddSingleton<OpenBaoTokenSource>();
 builder.Services.AddSingleton<ISignableSource, UomSignable>();
 builder.Services.AddSingleton<ISignableSource, DeviationSignable>();
 builder.Services.AddSingleton<ISignableSource, CapaSignable>();
