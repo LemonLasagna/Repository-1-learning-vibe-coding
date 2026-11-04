@@ -180,6 +180,21 @@ public sealed class WorkflowStore(NpgsqlConnection conn, NpgsqlTransaction tx)
         return true;
     }
 
+    /// <summary>A released version of <paramref name="code"/> as stored, with the id of its version row; null when it is not released.</summary>
+    public async Task<(Guid VersionId, WorkflowDefinition Definition)?> ReleasedVersionAsync(string code, int version, CancellationToken ct)
+    {
+        await using var cmd = Cmd("""
+            SELECT v.id, v.snapshot::text
+              FROM wf.process_definition_version v
+              JOIN wf.process_definition d ON d.id = v.entity_id
+             WHERE d.code = @code AND v.version_no = @version
+            """);
+        cmd.Parameters.AddWithValue("code", code);
+        cmd.Parameters.AddWithValue("version", version);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        return await r.ReadAsync(ct) ? (r.GetGuid(0), FromModel(JsonNode.Parse(r.GetString(1))!.AsObject())) : null;
+    }
+
     /// <summary>The definition an instance started on, as stored in its version (URS-WF-005).</summary>
     public async Task<WorkflowDefinition> PinnedAsync(Guid instanceId, CancellationToken ct)
     {

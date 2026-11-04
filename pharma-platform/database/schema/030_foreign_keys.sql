@@ -76,6 +76,7 @@ ALTER TABLE meta.document_template ADD CONSTRAINT fk_document_template_entity_de
 ALTER TABLE meta.document_template ADD CONSTRAINT fk_document_template_stored_object_id FOREIGN KEY (stored_object_id) REFERENCES file.stored_object(id);
 ALTER TABLE meta.audit_policy ADD CONSTRAINT fk_audit_policy_entity_definition_id FOREIGN KEY (entity_definition_id) REFERENCES meta.entity_definition(id);
 ALTER TABLE meta.audit_policy ADD CONSTRAINT fk_audit_policy_field_definition_id FOREIGN KEY (field_definition_id) REFERENCES meta.field_definition(id);
+ALTER TABLE meta.config_package ADD CONSTRAINT fk_config_package_approval_signature_id FOREIGN KEY (approval_signature_id) REFERENCES esig.signature(id);
 ALTER TABLE meta.config_package ADD CONSTRAINT fk_config_package_workflow_instance_id FOREIGN KEY (workflow_instance_id) REFERENCES wf.process_instance(id);
 ALTER TABLE meta.config_package_item ADD CONSTRAINT fk_config_package_item_config_package_id FOREIGN KEY (config_package_id) REFERENCES meta.config_package(id);
 ALTER TABLE meta.config_deployment ADD CONSTRAINT fk_config_deployment_config_package_id FOREIGN KEY (config_package_id) REFERENCES meta.config_package(id);

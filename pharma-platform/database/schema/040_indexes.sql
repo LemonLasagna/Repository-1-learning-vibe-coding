@@ -221,6 +221,7 @@ CREATE INDEX ix_meta_audit_policy_tenant ON meta.audit_policy (tenant_id);
 CREATE INDEX ix_meta_audit_policy_entity_definition_id ON meta.audit_policy (entity_definition_id);
 CREATE INDEX ix_meta_audit_policy_field_definition_id ON meta.audit_policy (field_definition_id);
 CREATE INDEX ix_meta_config_package_tenant ON meta.config_package (tenant_id);
+CREATE INDEX ix_meta_config_package_approval_signature_id ON meta.config_package (approval_signature_id);
 CREATE INDEX ix_meta_config_package_workflow_instance_id ON meta.config_package (workflow_instance_id);
 CREATE UNIQUE INDEX ux_meta_config_package_code ON meta.config_package (tenant_id, code);
 CREATE INDEX tg_meta_config_package_code ON meta.config_package USING gin (code gin_trgm_ops);

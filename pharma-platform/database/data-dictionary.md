@@ -606,6 +606,14 @@
 | content_hash | char(64) | N |  |
 | manifest | jsonb | N |  |
 | status | varchar(30) | N |  |
+| kms_signature | text | Y |  |
+| signing_key_name | varchar(50) | Y |  |
+| signing_key_version | integer | Y |  |
+| approved_by | uuid | Y |  |
+| approved_at | timestamptz | Y |  |
+| approval_signature_id | uuid | Y | FK → `esig.signature` |
+| exported_at | timestamptz | Y |  |
+| import_log | jsonb | Y |  |
 
 ### `meta.config_package_item`  (flags: —; audited)
 
