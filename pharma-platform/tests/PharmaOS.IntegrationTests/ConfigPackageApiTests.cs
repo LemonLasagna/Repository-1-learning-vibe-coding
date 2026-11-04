@@ -46,7 +46,6 @@ internal sealed class FakeSigner : IPackageSigner, IDisposable
 /// signature, export, and import where the signing key is trusted. Every refusal on import leaves nothing behind.
 /// </summary>
 [Collection(PostgresFixture.Collection)]
-[Trait("Req", "URS-CFG-007")]
 public sealed class ConfigPackageApiTests : IClassFixture<PostgresFixture>, IAsyncLifetime, IDisposable
 {
     private static readonly Guid Tenant = Guid.Parse("0000000a-0000-0000-0000-000000000000");
