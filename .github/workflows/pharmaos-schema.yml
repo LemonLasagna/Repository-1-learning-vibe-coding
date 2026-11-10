@@ -221,7 +221,12 @@ jobs:
       - name: Create the database with the demo organisation (installer, no frontend, no smoke check)
         run: ./install.sh --non-interactive --pg-host localhost --db pharmaos_e2e --skip-web --skip-smoke --demo-data
       - name: PostgreSQL 16 client tools (the server is 16; a newer pg_dump makes dumps an older server cannot restore)
-        run: sudo apt-get install -y --no-install-recommends postgresql-client-16
+        run: |
+          if [ ! -x /usr/lib/postgresql/16/bin/pg_dump ]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends postgresql-client-16
+          fi
+          /usr/lib/postgresql/16/bin/pg_dump --version
       - name: Backup and restore reproduces the database with demo data (schema, every row, audit trail)
         run: PGPASSWORD=postgres tools/backup_restore_test.sh pharmaos_e2e localhost 5432 postgres
       - name: Start the backend (Development settings point at the local Keycloak)
