@@ -46,6 +46,7 @@ internal sealed class FakeSigner : IPackageSigner, IDisposable
 /// signature, export, and import where the signing key is trusted. Every refusal on import leaves nothing behind.
 /// </summary>
 [Collection(PostgresFixture.Collection)]
+[Trait("Req", "URS-CFG-007")]
 public sealed class ConfigPackageApiTests : IClassFixture<PostgresFixture>, IAsyncLifetime, IDisposable
 {
     private static readonly Guid Tenant = Guid.Parse("0000000a-0000-0000-0000-000000000000");
@@ -526,10 +527,17 @@ public sealed class ConfigPackageApiTests : IClassFixture<PostgresFixture>, IAsy
             .Single(w => w.GetProperty("code").GetString() == CapaWorkflow.Definition.Code).GetProperty("version").GetInt32();
     }
 
+    /// <summary>Runs SQL as a person with direct database access would: the database still needs an actor for any GxP write.</summary>
     private static async Task ExecAsync(PostgresFixture db, string sql)
     {
         await using var conn = new NpgsqlConnection(db.AdminConnectionString);
         await conn.OpenAsync();
+        await using (var session = new NpgsqlCommand("SELECT set_config('app.user_id', @user, false), set_config('app.tenant_id', @tenant, false), set_config('app.change_reason', 'test tampering', false)", conn))
+        {
+            session.Parameters.AddWithValue("user", Admin.Sub.ToString());
+            session.Parameters.AddWithValue("tenant", Tenant.ToString());
+            await session.ExecuteNonQueryAsync();
+        }
         await using var cmd = new NpgsqlCommand(sql, conn);
         await cmd.ExecuteNonQueryAsync();
     }
