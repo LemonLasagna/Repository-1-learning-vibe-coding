@@ -1,0 +1,265 @@
+using System.Text.RegularExpressions;
+using System.Text.Json.Nodes;
+using Microsoft.Extensions.Options;
+using PharmaOS.Gxp;
+using PharmaOS.Platform.Host.Keys;
+using PharmaOS.Platform.Host.Workflow;
+using static PharmaOS.Platform.Host.Api.ApiResults;
+
+namespace PharmaOS.Platform.Host.ConfigPackages;
+
+/// <summary>
+/// Configuration packages (FS-CFG-014): released workflow versions are collected into a package with a manifest and a SHA-256 over
+/// its content, approved with an electronic signature (which also has OpenBao sign the hash), exported as a file, and imported into
+/// another installation, which checks the hash, checks the signature against keys it trusts and dry-runs every item before it
+/// stores anything. Deploying an imported package is a separate, signed step.
+/// </summary>
+public static partial class PackageEndpoints
+{
+    private const string Base = "/api/config/v1/packages";
+
+    [GeneratedRegex("^[A-Z][A-Z0-9_-]{2,49}$")]
+    private static partial Regex CodePattern();
+
+    public static void MapConfigPackageEndpoints(this IEndpointRouteBuilder app)
+    {
+        var group = app.MapGroup(Base);
+        group.MapPost("", Build).RequireAuthorization(Permissions.ConfigPackageAuthor);
+        group.MapGet("", List).RequireAuthorization(Permissions.ConfigPackageAuthor);
+        group.MapGet("{id:guid}", Get).RequireAuthorization(Permissions.ConfigPackageAuthor);
+        group.MapPost("{id:guid}/approve", (Guid id) =>
+            Problem(StatusCodes.Status400BadRequest, "SIGNATURE_REQUIRED", "Signature required",
+                $"Approving a package is an electronic signature. Start it with POST /api/esig/v1/challenges (entity {PackageSignable.Entity}, recordId {id}, action {PackageSignable.Approve}, meaning APPROVED)."))
+            .RequireAuthorization(Permissions.ConfigPackageApprove);
+        group.MapPost("{id:guid}/export", Export).RequireAuthorization(Permissions.ConfigPackageAuthor);
+        group.MapPost("import", Import).RequireAuthorization(Permissions.ConfigPackageAuthor);
+    }
+
+    private static async Task<IResult> Build(
+        JsonObject body, PlatformDbContext db, IGxpContextAccessor gxp, IOptions<ConfigPackageOptions> options, HttpContext http, CancellationToken ct)
+    {
+        if (gxp.Current is not { } ctx) return MissingIdentity();
+        var errors = new Dictionary<string, string[]>();
+        var code = Text(body, "code", errors);
+        var name = Text(body, "name", errors);
+        var label = Text(body, "versionLabel", errors);
+        if (code is not null && !CodePattern().IsMatch(code))
+            errors["code"] = ["3 to 50 characters: capital letters, digits, '_' or '-', starting with a letter."];
+        if (name is { Length: > 255 }) errors["name"] = ["At most 255 characters."];
+        if (label is { Length: > 50 }) errors["versionLabel"] = ["At most 50 characters."];
+        var requested = new List<(string Code, int Version)>();
+        if (body["items"] is not JsonArray array || array.Count == 0)
+            errors["items"] = ["List at least one workflow version."];
+        else
+            for (var i = 0; i < array.Count; i++)
+            {
+                if (array[i] is JsonObject o && o["artifactType"]?.GetValue<string>() == PackageItem.Workflow
+                    && o["code"] is JsonValue c && c.TryGetValue<string>(out var itemCode)
+                    && o["version"] is JsonValue v && v.TryGetValue<int>(out var version))
+                    requested.Add((itemCode, version));
+                else
+                    errors[$"items[{i}]"] = [$"An object with artifactType '{PackageItem.Workflow}', a code and a whole-number version."];
+            }
+        if (requested.Count != requested.Distinct().Count()) errors["items"] = ["Each workflow version may be listed once."];
+        if (errors.Count > 0) return Results.ValidationProblem(errors);
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var (conn, sqlTx) = Sql(db);
+        var packages = new PackageStore(conn, sqlTx);
+        if (await packages.CodeExistsAsync(code!, ct))
+            return Problem(StatusCodes.Status409Conflict, "PACKAGE_EXISTS", "Package code in use", $"A package with code {code} already exists.");
+
+        var wf = new WorkflowStore(conn, sqlTx);
+        var items = new List<PackageItem>();
+        var artifactIds = new Dictionary<(string, int), Guid>();
+        var missing = new List<string>();
+        foreach (var (itemCode, version) in requested)
+        {
+            if (await wf.ReleasedVersionAsync(itemCode, version, ct) is not { } released)
+            {
+                missing.Add($"{itemCode} version {version}");
+                continue;
+            }
+            items.Add(new PackageItem(PackageItem.Workflow, itemCode, version, released.Definition.InitialState,
+                WorkflowStore.TransitionsJson(released.Definition.Transitions)));
+            artifactIds[(itemCode, version)] = released.VersionId;
+        }
+        if (missing.Count > 0)
+            return Problem(StatusCodes.Status422UnprocessableEntity, "NOT_RELEASED", "Not released",
+                $"Only released workflow versions can be packaged. Not released here: {string.Join(", ", missing)}.");
+
+        var document = PackageDocument.Create(code!, name!, label!, options.Value.EnvironmentName, PlatformInfo.Version, items);
+        var id = await packages.InsertAsync(ctx, document, PackageStore.Draft, artifactIds, null, null, null, null, ct);
+        var row = (await packages.GetAsync(id, forUpdate: false, ct))!;
+        await tx.CommitAsync(ct);
+
+        SetETag(http, row.RowVersion);
+        return Results.Created($"{Base}/{id}", Response(row, document));
+    }
+
+    private static async Task<IResult> List(PlatformDbContext db, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var (conn, sqlTx) = Sql(db);
+        var rows = await new PackageStore(conn, sqlTx).ListAsync(ct);
+        return Results.Ok(new { items = rows.Select(r => Response(r, null)) });
+    }
+
+    private static async Task<IResult> Get(Guid id, PlatformDbContext db, HttpContext http, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var (conn, sqlTx) = Sql(db);
+        var store = new PackageStore(conn, sqlTx);
+        var row = await store.GetAsync(id, forUpdate: false, ct);
+        if (row is null) return Results.NotFound();
+        SetETag(http, row.RowVersion);
+        return Results.Ok(Response(row, await store.DocumentAsync(row, PackageSignable.PackagePlatformVersion(row), ct)));
+    }
+
+    /// <summary>The package as a file to carry to another installation. Only an approved package is exported.</summary>
+    private static async Task<IResult> Export(
+        Guid id, PlatformDbContext db, IGxpContextAccessor gxp, IPackageSigner signer, CancellationToken ct)
+    {
+        if (gxp.Current is null) return MissingIdentity();
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var (conn, sqlTx) = Sql(db);
+        var store = new PackageStore(conn, sqlTx);
+        var row = await store.GetAsync(id, forUpdate: true, ct);
+        if (row is null) return Results.NotFound();
+        if (row.Status != PackageStore.Approved || row.Signature is null)
+            return Problem(StatusCodes.Status409Conflict, "WRONG_STATUS", "Not possible in this status",
+                $"The package is {row.Status}; export needs {PackageStore.Approved}.");
+        var document = await store.DocumentAsync(row, PackageSignable.PackagePlatformVersion(row), ct);
+        if (document.ContentHash != row.ContentHash)
+            return Problem(StatusCodes.Status409Conflict, "PACKAGE_CORRUPT", "Package content does not match its hash",
+                "The stored items no longer produce the package's recorded hash. Do not use this package; build it again.");
+
+        // The public key is for the person reading the file (to compare with what the target trusts); verification never uses it.
+        string? publicKey = null;
+        try
+        {
+            publicKey = (await signer.KeyInfoAsync(ct)).PublicKeysPem.GetValueOrDefault(row.SigningKeyVersion ?? 0);
+        }
+        catch (SigningUnavailableException)
+        {
+        }
+        if (row.ExportedAt is null)
+            await store.SetAsync(id, row.RowVersion, new Dictionary<string, object?> { ["exported_at"] = DateTimeOffset.UtcNow }, ct);
+        await tx.CommitAsync(ct);
+
+        var file = new JsonObject
+        {
+            ["format"] = PackageDocument.Format,
+            ["package"] = document.ToJson(),
+            ["contentHash"] = row.ContentHash,
+            ["signature"] = new JsonObject { ["value"] = row.Signature, ["keyName"] = row.SigningKeyName, ["keyVersion"] = row.SigningKeyVersion },
+            ["publicKeyPem"] = publicKey,
+        };
+        return Results.Content(file.ToJsonString(), "application/json");
+    }
+
+    /// <summary>
+    /// Imports a package file. Nothing is stored unless the file is well formed, its hash matches, its signature is valid under a
+    /// key this installation trusts, and every item passes a dry run against what is released here.
+    /// </summary>
+    private static async Task<IResult> Import(
+        JsonObject body, PlatformDbContext db, IGxpContextAccessor gxp, IPackageSigner signer, IOptions<ConfigPackageOptions> options,
+        CancellationToken ct)
+    {
+        if (gxp.Current is not { } ctx) return MissingIdentity();
+        var trusted = new List<TrustedKey>(options.Value.TrustedKeys);
+        try
+        {
+            // This installation's own key: lets a package built and signed here be imported here, for example into VAL after PROD.
+            var own = await signer.KeyInfoAsync(ct);
+            trusted.AddRange(own.PublicKeysPem.Select(k => new TrustedKey($"this installation ({own.Name})", k.Key, k.Value)));
+        }
+        catch (SigningUnavailableException)
+        {
+            // Signing is not set up here; only configured keys are trusted.
+        }
+
+        var verification = PackageVerifier.Verify(body, trusted);
+        if (verification.Package is not { } package) return Rejected(verification.Problems);
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var (conn, sqlTx) = Sql(db);
+        var packages = new PackageStore(conn, sqlTx);
+        if (await packages.CodeExistsAsync(package.Document.Code, ct))
+            return Problem(StatusCodes.Status409Conflict, "PACKAGE_EXISTS", "Package already here",
+                $"A package with code {package.Document.Code} already exists in this installation.");
+
+        var report = await DryRunAsync(new WorkflowDraftStore(conn, sqlTx), new WorkflowStore(conn, sqlTx), package.Document, ct);
+        if (report.Any(r => r.Problems.Count > 0))
+            return Rejected(report.SelectMany(r => r.Problems.Select(p => $"{r.Code} version {r.Version}: {p}")), report);
+
+        var log = new JsonObject
+        {
+            ["trustedAs"] = package.TrustedAs, ["importedAt"] = DateTimeOffset.UtcNow.ToString("O"),
+            ["items"] = new JsonArray([.. report.Select(r => (JsonNode)new JsonObject
+                { ["code"] = r.Code, ["version"] = r.Version, ["outcome"] = r.Outcome })]),
+        };
+        var id = await packages.InsertAsync(ctx, package.Document, PackageStore.Imported, new Dictionary<(string, int), Guid>(),
+            package.SignatureValue, (body["signature"] as JsonObject)?["keyName"]?.GetValue<string>(), package.KeyVersion, log, ct);
+        var row = (await packages.GetAsync(id, forUpdate: false, ct))!;
+        await tx.CommitAsync(ct);
+        return Results.Created($"{Base}/{id}", Response(row, package.Document));
+    }
+
+    private sealed record DryRunItem(string Code, int Version, string Outcome, IReadOnlyList<string> Problems);
+
+    /// <summary>What deploying each item would do here: add it, find it already released identically, or fail a rule.</summary>
+    private static async Task<IReadOnlyList<DryRunItem>> DryRunAsync(
+        WorkflowDraftStore drafts, WorkflowStore wf, PackageDocument document, CancellationToken ct)
+    {
+        var report = new List<DryRunItem>();
+        foreach (var item in document.Items)
+        {
+            var input = new DraftInput(item.Code, item.Version, item.InitialState, WorkflowStore.TransitionsFromJson(item.Transitions));
+            if (BuiltInWorkflows.Find(item.Code) is null)
+            {
+                report.Add(new(item.Code, item.Version, "REFUSED", [$"This installation has no workflow named {item.Code}."]));
+                continue;
+            }
+            if (await wf.ReleasedVersionAsync(item.Code, item.Version, ct) is { } released)
+            {
+                var same = CanonicalJson.Sha256Hex(WorkflowStore.TransitionsJson(released.Definition.Transitions)) ==
+                           CanonicalJson.Sha256Hex(item.Transitions) && released.Definition.InitialState == item.InitialState;
+                report.Add(same
+                    ? new(item.Code, item.Version, "ALREADY_RELEASED", [])
+                    : new(item.Code, item.Version, "REFUSED",
+                        [$"Version {item.Version} is already released here with different content. A changed workflow needs a new version number."]));
+                continue;
+            }
+            var (_, problems) = await WorkflowAuthoringEndpoints.CheckAsync(drafts, input, ct);
+            report.Add(new(item.Code, item.Version, problems.Count == 0 ? "ADD" : "REFUSED", problems));
+        }
+        return report;
+    }
+
+    private static IResult Rejected(IEnumerable<string> problems, IReadOnlyList<DryRunItem>? report = null) =>
+        Results.Problem(statusCode: StatusCodes.Status422UnprocessableEntity, title: "Package refused",
+            detail: "The package was not imported. Nothing was stored.",
+            extensions: new Dictionary<string, object?>
+            {
+                ["code"] = "PACKAGE_REFUSED",
+                ["problems"] = problems.ToList(),
+                ["items"] = report?.Select(r => new { r.Code, r.Version, r.Outcome, r.Problems }),
+            });
+
+    private static object Response(PackageRow r, PackageDocument? document) => new
+    {
+        id = r.Id, code = r.Code, name = r.Name, versionLabel = r.VersionLabel, sourceEnvironment = r.SourceEnvironment,
+        contentHash = r.ContentHash, status = r.Status, manifest = r.Manifest, approvedBy = r.ApprovedBy, approvedAt = r.ApprovedAt,
+        approvalSignatureId = r.ApprovalSignatureId, signingKeyVersion = r.SigningKeyVersion, exportedAt = r.ExportedAt,
+        importLog = r.ImportLog, rowVersion = r.RowVersion, updatedAt = r.UpdatedAt,
+        items = document?.Items.Select(i => new { artifactType = i.ArtifactType, code = i.Code, version = i.Version }),
+    };
+
+    private static string? Text(JsonObject body, string name, Dictionary<string, string[]> errors)
+    {
+        if (body[name] is JsonValue v && v.TryGetValue<string>(out var s) && !string.IsNullOrWhiteSpace(s)) return s.Trim();
+        errors[name] = ["Required."];
+        return null;
+    }
+}

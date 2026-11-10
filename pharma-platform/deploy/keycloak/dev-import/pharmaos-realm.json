@@ -108,6 +108,14 @@
         {
           "name": "wf.definition:approve",
           "description": "PharmaOS permission wf.definition:approve (approve, reject and activate submitted workflow definitions)"
+        },
+        {
+          "name": "cfg.package:author",
+          "description": "PharmaOS permission cfg.package:author (build, list, export and import configuration packages)"
+        },
+        {
+          "name": "cfg.package:approve",
+          "description": "PharmaOS permission cfg.package:approve (approve a configuration package, which signs its hash)"
         }
       ]
     }
@@ -279,7 +287,9 @@
           "qms.change:read",
           "qms.change:approve",
           "wf.definition:author",
-          "wf.definition:approve"
+          "wf.definition:approve",
+          "cfg.package:author",
+          "cfg.package:approve"
         ]
       }
     }

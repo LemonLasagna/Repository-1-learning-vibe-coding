@@ -16,7 +16,9 @@ namespace PharmaOS.IntegrationTests;
 /// builds the same claims Keycloak would issue (sub, tenant_id, name, preferred_username, perm).
 /// The test scheme exists only in this test assembly.
 /// </summary>
-public sealed class PlatformFactory(PostgresFixture db, TimeProvider? time = null, IReadOnlyDictionary<string, string>? settings = null)
+public sealed class PlatformFactory(
+    PostgresFixture db, TimeProvider? time = null, IReadOnlyDictionary<string, string>? settings = null,
+    Action<IServiceCollection>? configure = null)
     : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -28,6 +30,7 @@ public sealed class PlatformFactory(PostgresFixture db, TimeProvider? time = nul
         builder.ConfigureTestServices(services =>
         {
             if (time is not null) services.AddSingleton(time);
+            configure?.Invoke(services);
             services.AddAuthentication(TestAuth.SchemeName)
                 .AddScheme<AuthenticationSchemeOptions, TestAuth>(TestAuth.SchemeName, _ => { });
             services.PostConfigure<AuthenticationOptions>(o =>
