@@ -16,8 +16,8 @@ generated from the tests instead.
 
 | | Requirements | With at least one test |
 |---|---|---|
-| All | 160 | 21 |
-| Mandatory (M) | 135 | 21 |
+| All | 160 | 22 |
+| Mandatory (M) | 135 | 22 |
 
 ## 8.1 General (GEN)
 
@@ -41,7 +41,7 @@ generated from the tests instead.
 | URS-CFG-004 | Administrators shall configure workflows, approval routes, escalations, and notifications | M · Y · H | — |
 | URS-CFG-005 | Administrators shall configure dashboards and reports | H · N · L | — |
 | URS-CFG-006 | All configuration artefacts shall be versioned with full history and comparison | M · Y · H | — |
-| URS-CFG-007 | Configuration shall be promoted between environments only as approved, hash-verified packages; direct edits in production shall be prevented | M · Y · H | — |
+| URS-CFG-007 | Configuration shall be promoted between environments only as approved, hash-verified packages; direct edits in production shall be prevented | M · Y · H | `ConfigPackageApiTests (24 tests)` |
 | URS-CFG-008 | Administrators shall be able to define custom entities (no code) that inherit audit trail, workflow, and e-signature capabilities | H · Y · M | — |
 
 ## 8.3 Workflow (WF)
@@ -266,7 +266,7 @@ generated from the tests instead.
 
 ## Mandatory requirements that no test names
 
-114 of 135:
+113 of 135:
 
 - URS-GEN-001: The system shall support the organisation hierarchy enterprise → region → country → legal entity → site → plant → building → area → room, plus business units and departments
 - URS-GEN-003: The system shall display date/time in the site time zone with the UTC offset, using a server-controlled time source
@@ -275,7 +275,6 @@ generated from the tests instead.
 - URS-CFG-002: Administrators shall configure lookup lists, numbering schemes, menus, list views, and email templates
 - URS-CFG-004: Administrators shall configure workflows, approval routes, escalations, and notifications
 - URS-CFG-006: All configuration artefacts shall be versioned with full history and comparison
-- URS-CFG-007: Configuration shall be promoted between environments only as approved, hash-verified packages; direct edits in production shall be prevented
 - URS-WF-002: Support rejection loops back to any prior configured step, with loop counters
 - URS-WF-003: Support time-based escalation with multiple levels and business calendars
 - URS-WF-004: Support delegation (planned out-of-office and per-task) with audit of on-behalf-of

@@ -5,6 +5,8 @@ using PharmaOS.Gxp;
 
 namespace PharmaOS.Platform.Host.ConfigPackages;
 
+public sealed record DeploymentRow(Guid Id, string TargetEnvironment, DateTimeOffset DeployedAt, Guid DeployedBy, string Result, string? Log);
+
 public sealed record PackageRow(
     Guid Id, string Code, string Name, string VersionLabel, string SourceEnvironment, string ContentHash, string Status,
     JsonObject Manifest, string? Signature, string? SigningKeyName, int? SigningKeyVersion, Guid? ApprovedBy, DateTimeOffset? ApprovedAt,
@@ -16,6 +18,7 @@ public sealed class PackageStore(NpgsqlConnection conn, NpgsqlTransaction tx)
     public const string Draft = "DRAFT";
     public const string Approved = "APPROVED";
     public const string Imported = "IMPORTED";
+    public const string Deployed = "DEPLOYED";
 
     private const string Columns = """
         id, code, name, version_label, source_environment, content_hash, status, manifest::text, kms_signature, signing_key_name,
@@ -115,6 +118,38 @@ public sealed class PackageStore(NpgsqlConnection conn, NpgsqlTransaction tx)
         var list = new List<PackageRow>();
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct)) list.Add(Read(r));
+        return list;
+    }
+
+    public async Task AddDeploymentAsync(
+        GxpContext ctx, Guid packageId, string environment, DateTimeOffset at, string result, string log, CancellationToken ct)
+    {
+        await using var cmd = Cmd("""
+            INSERT INTO meta.config_deployment (tenant_id, config_package_id, target_environment, deployed_at, deployed_by, result, log,
+                   created_by, updated_by)
+            VALUES (@tenant, @package, @env, @at, @user, @result, @log, @user, @user)
+            """);
+        cmd.Parameters.AddWithValue("tenant", ctx.TenantId);
+        cmd.Parameters.AddWithValue("user", ctx.UserId);
+        cmd.Parameters.AddWithValue("package", packageId);
+        cmd.Parameters.AddWithValue("env", environment);
+        cmd.Parameters.AddWithValue("at", at);
+        cmd.Parameters.AddWithValue("result", result);
+        cmd.Parameters.AddWithValue("log", log);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<DeploymentRow>> DeploymentsAsync(Guid packageId, CancellationToken ct)
+    {
+        await using var cmd = Cmd("""
+            SELECT id, target_environment, deployed_at, deployed_by, result, log
+              FROM meta.config_deployment WHERE config_package_id = @id ORDER BY deployed_at
+            """);
+        cmd.Parameters.AddWithValue("id", packageId);
+        var list = new List<DeploymentRow>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+            list.Add(new(r.GetGuid(0), r.GetString(1), r.GetFieldValue<DateTimeOffset>(2), r.GetGuid(3), r.GetString(4), r.IsDBNull(5) ? null : r.GetString(5)));
         return list;
     }
 

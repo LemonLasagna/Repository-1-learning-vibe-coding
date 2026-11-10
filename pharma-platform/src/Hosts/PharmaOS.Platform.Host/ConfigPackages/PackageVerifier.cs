@@ -20,6 +20,12 @@ public sealed class ConfigPackageOptions
 
     public List<TrustedKey> TrustedKeys { get; set; } = [];
 
+    /// <summary>
+    /// True in an environment named PROD. There, workflows cannot be authored or activated directly; they change only by deploying
+    /// an approved, hash-verified package (URS-CFG-007, FS-CFG-017).
+    /// </summary>
+    public bool IsProduction => string.Equals(EnvironmentName, "PROD", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>When true, the person who built a package cannot approve it. Off by default so one person can run an installation.</summary>
     public bool RequireSecondPerson { get; set; }
 }

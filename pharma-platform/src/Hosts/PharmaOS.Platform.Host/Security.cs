@@ -48,6 +48,9 @@ public static class Permissions
     /// <summary>Approve (sign) a configuration package, which signs its hash with the installation's key.</summary>
     public const string ConfigPackageApprove = "cfg.package:approve";
 
+    /// <summary>Deploy an imported configuration package: release its items here, signed as RELEASED.</summary>
+    public const string ConfigPackageDeploy = "cfg.package:deploy";
+
     /// <summary>
     /// One policy per permission, satisfied by a "perm" claim. In production the identity-access service
     /// resolves role assignments (scoped to org nodes) into these claims; Keycloak roles are not used directly.

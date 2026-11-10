@@ -38,7 +38,8 @@ builder.Services.AddAuthorizationBuilder()
     .AddPermissionPolicy(Permissions.WorkflowAuthor)
     .AddPermissionPolicy(Permissions.WorkflowApprove)
     .AddPermissionPolicy(Permissions.ConfigPackageAuthor)
-    .AddPermissionPolicy(Permissions.ConfigPackageApprove);
+    .AddPermissionPolicy(Permissions.ConfigPackageApprove)
+    .AddPermissionPolicy(Permissions.ConfigPackageDeploy);
 builder.Services.Configure<WorkflowAuthoringOptions>(builder.Configuration.GetSection(WorkflowAuthoringOptions.Section));
 builder.Services.AddSingleton(TimeProvider.System);
 

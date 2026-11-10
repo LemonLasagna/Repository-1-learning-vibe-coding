@@ -184,7 +184,9 @@ jobs:
 
   e2e:
     # Real sign-in: Keycloak (development realm) → backend-for-frontend → Angular, in Chrome.
-    runs-on: ubuntu-latest
+    # Pinned to 24.04: ubuntu-latest is now 26.04, which ships only the PostgreSQL 18 client, and a dump from a newer pg_dump does not
+    # restore into the 16 server used here (tools/backup_restore_test.sh).
+    runs-on: ubuntu-24.04
     needs: [dotnet, web]
     services:
       postgres:
@@ -220,6 +222,13 @@ jobs:
         run: docker compose -f deploy/keycloak/docker-compose.dev.yml up -d
       - name: Create the database with the demo organisation (installer, no frontend, no smoke check)
         run: ./install.sh --non-interactive --pg-host localhost --db pharmaos_e2e --skip-web --skip-smoke --demo-data
+      - name: PostgreSQL 16 client tools (the server is 16; a newer pg_dump makes dumps an older server cannot restore)
+        run: |
+          if [ ! -x /usr/lib/postgresql/16/bin/pg_dump ]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends postgresql-client-16
+          fi
+          /usr/lib/postgresql/16/bin/pg_dump --version
       - name: Backup and restore reproduces the database with demo data (schema, every row, audit trail)
         run: PGPASSWORD=postgres tools/backup_restore_test.sh pharmaos_e2e localhost 5432 postgres
       - name: Start the backend (Development settings point at the local Keycloak)

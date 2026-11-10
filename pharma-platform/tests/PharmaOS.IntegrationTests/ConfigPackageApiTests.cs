@@ -46,12 +46,18 @@ internal sealed class FakeSigner : IPackageSigner, IDisposable
 /// signature, export, and import where the signing key is trusted. Every refusal on import leaves nothing behind.
 /// </summary>
 [Collection(PostgresFixture.Collection)]
+[Trait("Req", "URS-CFG-007")]
 public sealed class ConfigPackageApiTests : IClassFixture<PostgresFixture>, IAsyncLifetime, IDisposable
 {
     private static readonly Guid Tenant = Guid.Parse("0000000a-0000-0000-0000-000000000000");
 
     private static readonly TestUser Admin = new(Guid.Parse("b8888888-0000-0000-0000-000000000001"), Tenant, "Pia Packager", "p.packager",
-        Permissions.ConfigPackageAuthor, Permissions.ConfigPackageApprove, Permissions.WorkflowAuthor, Permissions.WorkflowApprove, Permissions.EsigSign);
+        Permissions.ConfigPackageAuthor, Permissions.ConfigPackageApprove, Permissions.ConfigPackageDeploy, Permissions.WorkflowAuthor,
+        Permissions.WorkflowApprove, Permissions.EsigSign);
+
+    /// <summary>May approve packages but not deploy them.</summary>
+    private static readonly TestUser Approver = new(Guid.Parse("b8888888-0000-0000-0000-000000000004"), Tenant, "Ada Approver", "a.approver",
+        Permissions.ConfigPackageAuthor, Permissions.ConfigPackageApprove, Permissions.EsigSign);
 
     private static readonly TestUser AuthorOnly = new(Guid.Parse("b8888888-0000-0000-0000-000000000002"), Tenant, "Ari Author", "a.author",
         Permissions.ConfigPackageAuthor, Permissions.EsigSign);
@@ -124,13 +130,19 @@ public sealed class ConfigPackageApiTests : IClassFixture<PostgresFixture>, IAsy
         return (json.GetProperty("id").GetGuid(), json);
     }
 
-    private static async Task<HttpResponseMessage> ApproveAsync(PlatformFactory factory, TestUser user, Guid id)
+    private static Task<HttpResponseMessage> ApproveAsync(PlatformFactory factory, TestUser user, Guid id) =>
+        SignPackageAsync(factory, user, id, "approve", "APPROVED");
+
+    private static Task<HttpResponseMessage> DeployAsync(PlatformFactory factory, TestUser user, Guid id) =>
+        SignPackageAsync(factory, user, id, "deploy", "RELEASED");
+
+    private static async Task<HttpResponseMessage> SignPackageAsync(PlatformFactory factory, TestUser user, Guid id, string action, string meaning)
     {
         var current = await factory.ClientFor(user).GetAsync($"/api/config/v1/packages/{id}");
         var rowVersion = Authoring.VersionOf(current.Headers.ETag!.Tag);
         var challenge = await factory.ClientFor(user).PostAsJsonAsync("/api/esig/v1/challenges", new
         {
-            entity = "meta.config_package", recordId = id, recordVersion = rowVersion, meaning = "APPROVED", acknowledge = true, action = "approve",
+            entity = "meta.config_package", recordId = id, recordVersion = rowVersion, meaning, acknowledge = true, action,
         });
         if (challenge.StatusCode != HttpStatusCode.Created) return challenge;
         var challengeId = (await challenge.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("challengeId").GetGuid();
@@ -494,5 +506,185 @@ public sealed class ConfigPackageApiTests : IClassFixture<PostgresFixture>, IAsy
         Assert.Equal(HttpStatusCode.Created, res.StatusCode);
         var log = (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("importLog");
         Assert.Contains("this installation", log.GetProperty("trustedAs").GetString());
+    }
+
+    // ---- deploy ------------------------------------------------------------------------------------------------------------------
+
+    private static async Task<Guid> ImportAsync(PlatformFactory target, JsonNode file)
+    {
+        var res = await target.ClientFor(Admin).PostAsJsonAsync("/api/config/v1/packages/import", file);
+        Assert.Equal(HttpStatusCode.Created, res.StatusCode);
+        return (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+    }
+
+    private static async Task<JsonElement> PackageAsync(PlatformFactory factory, Guid id) =>
+        await (await factory.ClientFor(Admin).GetAsync($"/api/config/v1/packages/{id}")).Content.ReadFromJsonAsync<JsonElement>();
+
+    private static async Task<int> CurrentCapaVersionAsync(PlatformFactory factory)
+    {
+        var workflows = await (await factory.ClientFor(Admin).GetAsync("/api/workflow/v1/workflows")).Content.ReadFromJsonAsync<JsonElement>();
+        return workflows.GetProperty("items").EnumerateArray()
+            .Single(w => w.GetProperty("code").GetString() == CapaWorkflow.Definition.Code).GetProperty("version").GetInt32();
+    }
+
+    /// <summary>Runs SQL as a person with direct database access would: the database still needs an actor for any GxP write.</summary>
+    private static async Task ExecAsync(PostgresFixture db, string sql)
+    {
+        await using var conn = new NpgsqlConnection(db.AdminConnectionString);
+        await conn.OpenAsync();
+        await using (var session = new NpgsqlCommand("SELECT set_config('app.user_id', @user, false), set_config('app.tenant_id', @tenant, false), set_config('app.change_reason', 'test tampering', false)", conn))
+        {
+            session.Parameters.AddWithValue("user", Admin.Sub.ToString());
+            session.Parameters.AddWithValue("tenant", Tenant.ToString());
+            await session.ExecuteNonQueryAsync();
+        }
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    [Fact]
+    public async Task Deploying_an_imported_package_is_a_signature_that_releases_its_workflows_and_records_the_deployment()
+    {
+        var version = await ReleaseCapaAsync(_source);
+        var id = await ImportAsync(_target, await ApprovedFileAsync(version));
+        Assert.NotEqual(version, await CurrentCapaVersionAsync(_target));
+
+        var plain = await _target.ClientFor(Admin).PostAsync($"/api/config/v1/packages/{id}/deploy", null);
+        Assert.Equal(HttpStatusCode.BadRequest, plain.StatusCode);
+        Assert.Equal("SIGNATURE_REQUIRED", await Authoring.CodeOf(plain));
+
+        var signed = await DeployAsync(_target, Admin, id);
+        Assert.Equal(HttpStatusCode.Created, signed.StatusCode);
+
+        var package = await PackageAsync(_target, id);
+        Assert.Equal("DEPLOYED", package.GetProperty("status").GetString());
+        var deployment = Assert.Single(package.GetProperty("deployments").EnumerateArray());
+        Assert.Equal("VAL", deployment.GetProperty("targetEnvironment").GetString());
+        Assert.Equal(Admin.Sub, deployment.GetProperty("deployedBy").GetGuid());
+        Assert.Contains("ADD", deployment.GetProperty("log").GetString());
+        Assert.Equal(version, await CurrentCapaVersionAsync(_target));
+    }
+
+    [Fact]
+    public async Task Deploying_needs_its_own_permission_and_an_imported_package()
+    {
+        var version = await ReleaseCapaAsync(_source);
+        var file = await ApprovedFileAsync(version);
+        var id = await ImportAsync(_target, file);
+
+        var denied = await DeployAsync(_target, Approver, id);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        Assert.Equal("MISSING_PERMISSION", await Authoring.CodeOf(denied));
+
+        // A package built here, not imported, is not deployed to the installation that built it.
+        var (built, _) = await BuildAsync(_source, NewCode(), version);
+        var notImported = await DeployAsync(_source, Admin, built);
+        Assert.Equal(HttpStatusCode.Conflict, notImported.StatusCode);
+        Assert.Equal("WRONG_STATUS", await Authoring.CodeOf(notImported));
+
+        Assert.Equal(HttpStatusCode.Created, (await DeployAsync(_target, Admin, id)).StatusCode);
+        var twice = await DeployAsync(_target, Admin, id);
+        Assert.Equal(HttpStatusCode.Conflict, twice.StatusCode);
+        Assert.Equal("WRONG_STATUS", await Authoring.CodeOf(twice));
+    }
+
+    [Fact]
+    public async Task A_deployment_that_cannot_complete_releases_nothing_and_keeps_no_signature()
+    {
+        var capa = await ReleaseCapaAsync(_source);
+        var change = NextVersion();
+        var (changeId, changeEtag, _) = await Authoring.CreateAsync(_source.ClientFor(Admin), Authoring.From(ChangeWorkflow.Definition, change));
+        await Authoring.SubmitSignActivateAsync(_source, Admin, changeId, changeEtag);
+        var (id, _) = await BuildPackageOfAsync(_source, (CapaWorkflow.Definition.Code, capa), (ChangeWorkflow.Definition.Code, change));
+        Assert.Equal(HttpStatusCode.Created, (await ApproveAsync(_source, Admin, id)).StatusCode);
+        var imported = await ImportAsync(_target, await ExportAsync(_source, id));
+
+        // After the dry run, the target releases the same change version with different content.
+        var (otherId, otherEtag, _) = await Authoring.CreateAsync(_target.ClientFor(Admin),
+            Authoring.From(ChangeWorkflow.Definition, change, ChangeWorkflow.Definition.Transitions.Select(t => t with { Label = "Different" })));
+        await Authoring.SubmitSignActivateAsync(_target, Admin, otherId, otherEtag);
+        var signaturesBefore = await CountAsync(_targetDb, "esig.signature");
+
+        var res = await DeployAsync(_target, Admin, imported);
+
+        Assert.Equal(HttpStatusCode.Conflict, res.StatusCode);
+        Assert.Equal("NO_LONGER_VALID", await Authoring.CodeOf(res));
+        var package = await PackageAsync(_target, imported);
+        Assert.Equal("IMPORTED", package.GetProperty("status").GetString());
+        Assert.Empty(package.GetProperty("deployments").EnumerateArray());
+        Assert.NotEqual(capa, await CurrentCapaVersionAsync(_target));
+        Assert.Equal(signaturesBefore, await CountAsync(_targetDb, "esig.signature"));
+    }
+
+    private static async Task<(Guid Id, JsonElement Body)> BuildPackageOfAsync(PlatformFactory factory, params (string Code, int Version)[] items)
+    {
+        var res = await factory.ClientFor(Admin).PostAsJsonAsync("/api/config/v1/packages", new
+        {
+            code = NewCode(), name = "Two workflows", versionLabel = "1.0",
+            items = items.Select(i => new { artifactType = "WORKFLOW", code = i.Code, version = i.Version }).ToArray(),
+        });
+        Assert.Equal(HttpStatusCode.Created, res.StatusCode);
+        var json = await res.Content.ReadFromJsonAsync<JsonElement>();
+        return (json.GetProperty("id").GetGuid(), json);
+    }
+
+    [Fact]
+    public async Task Deploy_checks_again_that_the_stored_package_is_what_was_imported()
+    {
+        var version = await ReleaseCapaAsync(_source);
+        var altered = await ImportAsync(_target, await ApprovedFileAsync(version));
+        await ExecAsync(_targetDb, $"UPDATE meta.config_package_item SET payload = jsonb_set(payload, '{{definition,initialState}}', '\"CHANGED\"') WHERE config_package_id = '{altered}'");
+
+        var content = await DeployAsync(_target, Admin, altered);
+        Assert.Equal(HttpStatusCode.Conflict, content.StatusCode);
+        Assert.Equal("PACKAGE_CORRUPT", await Authoring.CodeOf(content));
+
+        var resigned = await ImportAsync(_target, await ApprovedFileAsync(await ReleaseCapaAsync(_source)));
+        await ExecAsync(_targetDb, $"UPDATE meta.config_package SET kms_signature = 'vault:v1:AAAA' WHERE id = '{resigned}'");
+        var signature = await DeployAsync(_target, Admin, resigned);
+        Assert.Equal(HttpStatusCode.Conflict, signature.StatusCode);
+        Assert.Equal("PACKAGE_NOT_TRUSTED", await Authoring.CodeOf(signature));
+    }
+
+    // ---- production lock ------------------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task In_production_workflows_are_not_edited_directly_but_a_package_can_still_be_deployed()
+    {
+        var version = await ReleaseCapaAsync(_source);
+        var file = await ApprovedFileAsync(version);
+
+        // A draft started while the installation was still being set up (not PROD), left submitted.
+        var (draftId, draftEtag, _) = await Authoring.CreateAsync(_target.ClientFor(Admin), Authoring.Capa(NextVersion()));
+        await Authoring.SubmitAsync(_target, Admin, draftId, draftEtag);
+
+        var prodSettings = new Dictionary<string, string>
+        {
+            ["ConfigPackages:EnvironmentName"] = "PROD",
+            ["ConfigPackages:TrustedKeys:0:Name"] = "config-env",
+            ["ConfigPackages:TrustedKeys:0:Version"] = "1",
+            ["ConfigPackages:TrustedKeys:0:PublicKeyPem"] = _sourceSigner.PublicKeyPem,
+        };
+        using var prod = new PlatformFactory(_targetDb, settings: prodSettings, configure: s => s.AddSingleton<IPackageSigner>(_targetSigner));
+
+        var create = await prod.ClientFor(Admin).PostAsJsonAsync(Authoring.Base, Authoring.Capa(NextVersion()));
+        Assert.Equal(HttpStatusCode.Forbidden, create.StatusCode);
+        Assert.Equal("PRODUCTION_LOCKED", await Authoring.CodeOf(create));
+
+        var etag = await Authoring.EtagAsync(prod.ClientFor(Admin), draftId);
+        var replace = await prod.ClientFor(Admin).SendAsync(new HttpRequestMessage(HttpMethod.Put, $"{Authoring.Base}/{draftId}")
+            { Content = JsonContent.Create(Authoring.Capa(NextVersion())) }.WithHeaders(ifMatch: etag));
+        Assert.Equal("PRODUCTION_LOCKED", await Authoring.CodeOf(replace));
+
+        var reject = await Authoring.StepAsync(prod.ClientFor(Admin), draftId, "reject", etag, new { comment = "no" });
+        Assert.Equal("PRODUCTION_LOCKED", await Authoring.CodeOf(reject));
+
+        var approve = await Authoring.SignApprovalAsync(prod, Admin, draftId, Authoring.VersionOf(etag));
+        Assert.Equal(HttpStatusCode.Forbidden, approve.StatusCode);
+        Assert.Equal("PRODUCTION_LOCKED", await Authoring.CodeOf(approve));
+
+        var id = await ImportAsync(prod, file);
+        Assert.Equal(HttpStatusCode.Created, (await DeployAsync(prod, Admin, id)).StatusCode);
+        Assert.Equal(version, await CurrentCapaVersionAsync(prod));
     }
 }

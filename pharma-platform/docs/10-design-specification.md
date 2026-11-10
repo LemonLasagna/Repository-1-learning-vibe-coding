@@ -95,6 +95,13 @@ artefacts (DRAFT) ─┐
   dry-runs migrations of in-flight records (for example a newly required field). It then commits atomically.
 - **Segment packs and accelerators** (doc 01 §1.2) are vendor-published config packages.
 
+**As built (workflow definitions only).** Packages carry released workflow versions. The signature is made by the installation's
+OpenBao transit key when QA approves (the e-signature and the key signature are one transaction). The import verifies the hash and
+the signature against a configured list of trusted public keys, never the key written in the file, and dry-runs each item with the
+same rules as workflow authoring. Deploy is an e-signature (RELEASED) that re-checks everything and releases the items atomically.
+In an environment named PROD, workflow authoring is read-only. Not built yet: other artefact types, dry-runs of in-flight record
+migrations (not needed for workflows, which pin their version per record), and a screen for any of it.
+
 ## 10.5 E-signature design
 
 ```
