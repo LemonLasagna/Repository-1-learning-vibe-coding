@@ -56,3 +56,28 @@ Things to know:
   because the host keeps every version's public key.
 - The CI job `openbao` runs the script and the signer tests against a real OpenBao in dev mode. It does not exercise
   initialisation, unsealing or Raft storage; those are checked by hand on a real installation.
+
+## Configuration packages
+
+Workflow definitions move between installations (CONFIG, VAL, PROD) as signed packages, not by editing each one:
+
+1. **Build** (`cfg.package:author`): `POST /api/config/v1/packages` with the released workflow versions to include. The package gets a
+   manifest and a SHA-256 over its content.
+2. **Approve** (`cfg.package:approve`): an electronic signature; OpenBao signs the hash in the same step.
+3. **Export** the approved package as a file and carry it to the other installation.
+4. **Import** (`cfg.package:author`): the target recomputes the hash, checks the signature against the keys it trusts and dry-runs every
+   item. Nothing is stored unless all of it passes. Importing deploys nothing.
+5. **Deploy** (`cfg.package:deploy`): an electronic signature (RELEASED) that releases the package's workflows in one transaction.
+   Everything is checked again at that moment; if anything fails, nothing is released and no signature is kept. Each deployment is
+   recorded.
+
+Settings (environment variables use `__`, e.g. `ConfigPackages__EnvironmentName`):
+
+| Setting | Meaning |
+|---|---|
+| `ConfigPackages:EnvironmentName` | `CONFIG`, `VAL`, `PROD` or your own name. Written into packages built here. **`PROD` makes workflow authoring read-only**: drafts cannot be created, edited, submitted, approved, activated or rejected there, so workflows change only by deploying a package. |
+| `ConfigPackages:TrustedKeys` | The public keys (name, key version, PEM) of the installations packages may come from. This installation's own key is always trusted. |
+| `ConfigPackages:RequireSecondPerson` | When true, the person who built a package cannot approve it. Off by default. |
+
+Whoever can change `TrustedKeys` decides what the installation accepts, and the app does not record that change; keep the file under
+change control. Only workflow definitions can be packaged in this version.

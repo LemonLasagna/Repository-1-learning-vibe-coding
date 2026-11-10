@@ -1,7 +1,10 @@
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
 using PharmaOS.Gxp;
+using PharmaOS.Platform.Host.ConfigPackages;
+using PharmaOS.Platform.Host.ESignature;
 using PharmaOS.Workflow;
 using static PharmaOS.Platform.Host.Api.ApiResults;
 
@@ -200,9 +203,15 @@ public static class WorkflowAuthoringEndpoints
         group.MapPost("{id:guid}/activate", (Guid id) => NeedsSignature(id, WorkflowDraftSignable.Activate)).RequireAuthorization(Permissions.WorkflowApprove);
     }
 
+    /// <summary>In a production environment workflows change only by deploying an approved package (URS-CFG-007, FS-CFG-017).</summary>
+    internal static ActionRefusal ProductionLockedRefusal() =>
+        new(StatusCodes.Status403Forbidden, "PRODUCTION_LOCKED", "Production is read-only",
+            "In a production environment workflows are not edited directly. Build, approve and deploy a configuration package instead.");
+
     private static async Task<IResult> Create(
-        JsonObject body, PlatformDbContext db, IGxpContextAccessor gxp, HttpContext http, CancellationToken ct)
+        JsonObject body, PlatformDbContext db, IGxpContextAccessor gxp, IOptions<ConfigPackageOptions> packages, HttpContext http, CancellationToken ct)
     {
+        if (packages.Value.IsProduction) return Problem(ProductionLockedRefusal());
         if (gxp.Current is not { } ctx) return MissingIdentity();
         var errors = new Dictionary<string, string[]>();
         var input = ParseInput(body, errors);
@@ -264,8 +273,10 @@ public static class WorkflowAuthoringEndpoints
     }
 
     private static async Task<IResult> Replace(
-        Guid id, JsonObject body, PlatformDbContext db, IGxpContextAccessor gxp, HttpContext http, CancellationToken ct)
+        Guid id, JsonObject body, PlatformDbContext db, IGxpContextAccessor gxp, IOptions<ConfigPackageOptions> packages, HttpContext http,
+        CancellationToken ct)
     {
+        if (packages.Value.IsProduction) return Problem(ProductionLockedRefusal());
         if (gxp.Current is null) return MissingIdentity();
         if (!TryParseIfMatch(http, out var expected)) return IfMatchRequired();
         var errors = new Dictionary<string, string[]>();
@@ -313,8 +324,9 @@ public static class WorkflowAuthoringEndpoints
             $"This step is an electronic signature. Start it with POST /api/esig/v1/challenges (entity {WorkflowDraftSignable.Entity}, recordId {id}, action {action}, meaning {WorkflowDraftSignable.MeaningOf[action]}).");
 
     private static Task<IResult> Reject(
-        Guid id, DecisionBody? body, PlatformDbContext db, IGxpContextAccessor gxp, HttpContext http, CancellationToken ct) =>
-        StepAsync(id, db, gxp, http, ct, async (step) =>
+        Guid id, DecisionBody? body, PlatformDbContext db, IGxpContextAccessor gxp, IOptions<ConfigPackageOptions> packages, HttpContext http,
+        CancellationToken ct) =>
+        packages.Value.IsProduction ? Task.FromResult(Problem(ProductionLockedRefusal())) : StepAsync(id, db, gxp, http, ct, async (step) =>
         {
             if (step.Row.Status is not (Submitted or Approved)) return WrongStatus(step.Row, "rejection", "SUBMITTED or APPROVED");
             if (string.IsNullOrWhiteSpace(body?.Comment)) return Invalid("comment", "Say why the workflow is rejected.");

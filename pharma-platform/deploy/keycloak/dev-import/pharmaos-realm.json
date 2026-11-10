@@ -116,6 +116,10 @@
         {
           "name": "cfg.package:approve",
           "description": "PharmaOS permission cfg.package:approve (approve a configuration package, which signs its hash)"
+        },
+        {
+          "name": "cfg.package:deploy",
+          "description": "PharmaOS permission cfg.package:deploy (deploy an imported configuration package, signed as released)"
         }
       ]
     }
@@ -289,7 +293,8 @@
           "wf.definition:author",
           "wf.definition:approve",
           "cfg.package:author",
-          "cfg.package:approve"
+          "cfg.package:approve",
+          "cfg.package:deploy"
         ]
       }
     }

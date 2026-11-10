@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using PharmaOS.Gxp;
+using PharmaOS.Platform.Host.ConfigPackages;
 using PharmaOS.Platform.Host.ESignature;
 
 namespace PharmaOS.Platform.Host.Workflow;
@@ -17,7 +18,7 @@ namespace PharmaOS.Platform.Host.Workflow;
 /// setting: with it off, no one counts as the last editor, so a single-user installation can approve its own draft. SUBMITTED and
 /// RELEASED are separate meanings because AUTHORED would forbid the same person from approving.
 /// </remarks>
-public sealed class WorkflowDraftSignable(IOptions<WorkflowAuthoringOptions> options) : ISignableSource
+public sealed class WorkflowDraftSignable(IOptions<WorkflowAuthoringOptions> options, IOptions<ConfigPackageOptions> packages) : ISignableSource
 {
     public const string Entity = "wf.definition";
     public const string Submit = "submit";
@@ -79,14 +80,24 @@ public sealed class WorkflowDraftSignable(IOptions<WorkflowAuthoringOptions> opt
         NpgsqlConnection conn, NpgsqlTransaction tx, SignedAction a, DraftRow draft, Guid signatureId, CancellationToken ct)
     {
         var input = draft.ToInput();
-        var target = BuiltInWorkflows.Find(input.Code)!;
-        var wf = new WorkflowStore(conn, tx);
-        var entityDefinitionId = await new EsigStore(conn, tx).EnsureEntityDefinitionAsync(a.Context, target.Signable, ct);
-        var definitionId = await wf.EnsureDefinitionAsync(a.Context, target.Release, target.Name, entityDefinitionId, ct);
-        await WorkflowTransitions.SetChangeReasonAsync(conn, tx, $"Workflow {input.Code} v{input.Version} activated from draft", ct);
-        await wf.WriteVersionAsync(a.Context, definitionId, new PharmaOS.Workflow.WorkflowDefinition(input.Code, input.Version, input.InitialState, input.Transitions), ct);
+        await ReleaseVersionAsync(conn, tx, a.Context, input, $"Workflow {input.Code} v{input.Version} activated from draft", ct);
         await WorkflowTransitions.SetChangeReasonAsync(conn, tx, a.Context.ChangeReason, ct);
         return new() { ["status"] = WorkflowAuthoringEndpoints.Active, ["activated_at"] = a.Now, ["activation_signature_id"] = signatureId };
+    }
+
+    /// <summary>
+    /// Writes <paramref name="input"/> as a released version of its record type's workflow, creating the definition on first use.
+    /// Shared by activating a draft and deploying a configuration package, so both release a workflow the same way.
+    /// </summary>
+    internal static async Task ReleaseVersionAsync(
+        NpgsqlConnection conn, NpgsqlTransaction tx, GxpContext ctx, DraftInput input, string changeReason, CancellationToken ct)
+    {
+        var target = BuiltInWorkflows.Find(input.Code)!;
+        var wf = new WorkflowStore(conn, tx);
+        var entityDefinitionId = await new EsigStore(conn, tx).EnsureEntityDefinitionAsync(ctx, target.Signable, ct);
+        var definitionId = await wf.EnsureDefinitionAsync(ctx, target.Release, target.Name, entityDefinitionId, ct);
+        await WorkflowTransitions.SetChangeReasonAsync(conn, tx, changeReason, ct);
+        await wf.WriteVersionAsync(ctx, definitionId, new PharmaOS.Workflow.WorkflowDefinition(input.Code, input.Version, input.InitialState, input.Transitions), ct);
     }
 
     private async Task<(ActionRefusal? Refusal, DraftRow? Draft)> CheckAsync(
@@ -97,6 +108,9 @@ public sealed class WorkflowDraftSignable(IOptions<WorkflowAuthoringOptions> opt
         if (draft is null) return (new(StatusCodes.Status404NotFound, "NOT_FOUND", "Not found", "The workflow draft does not exist."), null);
         if (!MeaningOf.TryGetValue(a.Action, out var meaning))
             return (new(StatusCodes.Status400BadRequest, "ACTION_NOT_SUPPORTED", "Action not supported", $"'{a.Action}' cannot be signed on a workflow draft."), draft);
+
+        if (packages.Value.IsProduction)
+            return (WorkflowAuthoringEndpoints.ProductionLockedRefusal(), draft);
 
         var permission = a.Action == Submit ? Permissions.WorkflowAuthor : Permissions.WorkflowApprove;
         if (!a.Permissions.Contains(permission))

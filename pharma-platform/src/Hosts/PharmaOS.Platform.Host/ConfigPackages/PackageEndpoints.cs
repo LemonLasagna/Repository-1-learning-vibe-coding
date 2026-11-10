@@ -31,6 +31,10 @@ public static partial class PackageEndpoints
             Problem(StatusCodes.Status400BadRequest, "SIGNATURE_REQUIRED", "Signature required",
                 $"Approving a package is an electronic signature. Start it with POST /api/esig/v1/challenges (entity {PackageSignable.Entity}, recordId {id}, action {PackageSignable.Approve}, meaning APPROVED)."))
             .RequireAuthorization(Permissions.ConfigPackageApprove);
+        group.MapPost("{id:guid}/deploy", (Guid id) =>
+            Problem(StatusCodes.Status400BadRequest, "SIGNATURE_REQUIRED", "Signature required",
+                $"Deploying a package is an electronic signature. Start it with POST /api/esig/v1/challenges (entity {PackageSignable.Entity}, recordId {id}, action {PackageSignable.Deploy}, meaning RELEASED)."))
+            .RequireAuthorization(Permissions.ConfigPackageDeploy);
         group.MapPost("{id:guid}/export", Export).RequireAuthorization(Permissions.ConfigPackageAuthor);
         group.MapPost("import", Import).RequireAuthorization(Permissions.ConfigPackageAuthor);
     }
@@ -113,7 +117,8 @@ public static partial class PackageEndpoints
         var row = await store.GetAsync(id, forUpdate: false, ct);
         if (row is null) return Results.NotFound();
         SetETag(http, row.RowVersion);
-        return Results.Ok(Response(row, await store.DocumentAsync(row, PackageSignable.PackagePlatformVersion(row), ct)));
+        return Results.Ok(Response(row, await store.DocumentAsync(row, PackageSignable.PackagePlatformVersion(row), ct),
+            await store.DeploymentsAsync(id, ct)));
     }
 
     /// <summary>The package as a file to carry to another installation. Only an approved package is exported.</summary>
@@ -167,17 +172,7 @@ public static partial class PackageEndpoints
         CancellationToken ct)
     {
         if (gxp.Current is not { } ctx) return MissingIdentity();
-        var trusted = new List<TrustedKey>(options.Value.TrustedKeys);
-        try
-        {
-            // This installation's own key: lets a package built and signed here be imported here, for example into VAL after PROD.
-            var own = await signer.KeyInfoAsync(ct);
-            trusted.AddRange(own.PublicKeysPem.Select(k => new TrustedKey($"this installation ({own.Name})", k.Key, k.Value)));
-        }
-        catch (SigningUnavailableException)
-        {
-            // Signing is not set up here; only configured keys are trusted.
-        }
+        var trusted = await PackageTrust.KeysAsync(options.Value, signer, ct);
 
         var verification = PackageVerifier.Verify(body, trusted);
         if (verification.Package is not { } package) return Rejected(verification.Problems);
@@ -189,8 +184,8 @@ public static partial class PackageEndpoints
             return Problem(StatusCodes.Status409Conflict, "PACKAGE_EXISTS", "Package already here",
                 $"A package with code {package.Document.Code} already exists in this installation.");
 
-        var report = await DryRunAsync(new WorkflowDraftStore(conn, sqlTx), new WorkflowStore(conn, sqlTx), package.Document, ct);
-        if (report.Any(r => r.Problems.Count > 0))
+        var report = await PackageDryRun.RunAsync(new WorkflowDraftStore(conn, sqlTx), new WorkflowStore(conn, sqlTx), package.Document, ct);
+        if (report.Any(r => r.Outcome == PackageDryRun.Refused))
             return Rejected(report.SelectMany(r => r.Problems.Select(p => $"{r.Code} version {r.Version}: {p}")), report);
 
         var log = new JsonObject
@@ -206,37 +201,6 @@ public static partial class PackageEndpoints
         return Results.Created($"{Base}/{id}", Response(row, package.Document));
     }
 
-    private sealed record DryRunItem(string Code, int Version, string Outcome, IReadOnlyList<string> Problems);
-
-    /// <summary>What deploying each item would do here: add it, find it already released identically, or fail a rule.</summary>
-    private static async Task<IReadOnlyList<DryRunItem>> DryRunAsync(
-        WorkflowDraftStore drafts, WorkflowStore wf, PackageDocument document, CancellationToken ct)
-    {
-        var report = new List<DryRunItem>();
-        foreach (var item in document.Items)
-        {
-            var input = new DraftInput(item.Code, item.Version, item.InitialState, WorkflowStore.TransitionsFromJson(item.Transitions));
-            if (BuiltInWorkflows.Find(item.Code) is null)
-            {
-                report.Add(new(item.Code, item.Version, "REFUSED", [$"This installation has no workflow named {item.Code}."]));
-                continue;
-            }
-            if (await wf.ReleasedVersionAsync(item.Code, item.Version, ct) is { } released)
-            {
-                var same = CanonicalJson.Sha256Hex(WorkflowStore.TransitionsJson(released.Definition.Transitions)) ==
-                           CanonicalJson.Sha256Hex(item.Transitions) && released.Definition.InitialState == item.InitialState;
-                report.Add(same
-                    ? new(item.Code, item.Version, "ALREADY_RELEASED", [])
-                    : new(item.Code, item.Version, "REFUSED",
-                        [$"Version {item.Version} is already released here with different content. A changed workflow needs a new version number."]));
-                continue;
-            }
-            var (_, problems) = await WorkflowAuthoringEndpoints.CheckAsync(drafts, input, ct);
-            report.Add(new(item.Code, item.Version, problems.Count == 0 ? "ADD" : "REFUSED", problems));
-        }
-        return report;
-    }
-
     private static IResult Rejected(IEnumerable<string> problems, IReadOnlyList<DryRunItem>? report = null) =>
         Results.Problem(statusCode: StatusCodes.Status422UnprocessableEntity, title: "Package refused",
             detail: "The package was not imported. Nothing was stored.",
@@ -247,8 +211,9 @@ public static partial class PackageEndpoints
                 ["items"] = report?.Select(r => new { r.Code, r.Version, r.Outcome, r.Problems }),
             });
 
-    private static object Response(PackageRow r, PackageDocument? document) => new
+    private static object Response(PackageRow r, PackageDocument? document, IReadOnlyList<DeploymentRow>? deployments = null) => new
     {
+        deployments,
         id = r.Id, code = r.Code, name = r.Name, versionLabel = r.VersionLabel, sourceEnvironment = r.SourceEnvironment,
         contentHash = r.ContentHash, status = r.Status, manifest = r.Manifest, approvedBy = r.ApprovedBy, approvedAt = r.ApprovedAt,
         approvalSignatureId = r.ApprovalSignatureId, signingKeyVersion = r.SigningKeyVersion, exportedAt = r.ExportedAt,
