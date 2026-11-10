@@ -18,6 +18,20 @@ trap 'dropdb --if-exists -h "$HOST" -p "$PORT" -U "$SU" "$DST" >/dev/null 2>&1 |
 
 psql_() { psql -X -q -v ON_ERROR_STOP=1 -h "$HOST" -p "$PORT" -U "$SU" "$@"; }
 
+# A dump made by a newer pg_dump can contain settings an older server does not know (PostgreSQL 17 added transaction_timeout), so
+# the restore would fail. Use the client tools of the server's own major version, as a real backup procedure should; refuse to
+# continue with newer ones rather than report a restore problem that is only a version mismatch.
+SERVER_MAJOR=$(( $(psql -X -At -h "$HOST" -p "$PORT" -U "$SU" -d postgres -c 'SHOW server_version_num') / 10000 ))
+if [[ -x "/usr/lib/postgresql/$SERVER_MAJOR/bin/pg_dump" ]]; then
+  export PATH="/usr/lib/postgresql/$SERVER_MAJOR/bin:$PATH"
+fi
+CLIENT_MAJOR="$(pg_dump --version | sed -E 's/[^0-9]*([0-9]+).*/\1/')"
+if [[ "$CLIENT_MAJOR" -gt "$SERVER_MAJOR" ]]; then
+  echo "FAIL: pg_dump is version $CLIENT_MAJOR but the server is $SERVER_MAJOR, and a dump from a newer client may not restore into an older server." >&2
+  echo "      Install the PostgreSQL $SERVER_MAJOR client tools (postgresql-client-$SERVER_MAJOR) and run again." >&2
+  exit 1
+fi
+
 # Tables whose names come from the catalog, never from input.
 TABLES="$(psql_ -d "$SRC" -At -c "SELECT quote_ident(table_schema)||'.'||quote_ident(table_name) FROM information_schema.tables WHERE table_type='BASE TABLE' AND table_schema NOT IN ('pg_catalog','information_schema') ORDER BY 1")"
 SOURCE_ROWS=0
