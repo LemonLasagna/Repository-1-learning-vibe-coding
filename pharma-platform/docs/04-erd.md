@@ -577,6 +577,9 @@ erDiagram
     uuid approval_signature_id FK
     timestamptz exported_at
     jsonb import_log
+    uuid discarded_by
+    timestamptz discarded_at
+    varchar discard_reason
   }
   config_package_item {
     uuid config_package_id FK

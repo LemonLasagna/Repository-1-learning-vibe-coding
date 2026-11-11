@@ -13,7 +13,7 @@ const pkg = (over: Partial<ConfigPackage> = {}): ConfigPackage => ({
   id: 'p1', code: 'WF-2026-01', name: 'Workflow release, Q4', versionLabel: '1.0', sourceEnvironment: 'CONFIG', contentHash: HASH,
   status: 'DRAFT', manifest: { format: 'pharmaos-config-package/1', platformVersion: '0.9.0', items: [{ artifactType: 'WORKFLOW', code: 'CAPA_STD', version: 2 }] },
   approvedBy: null, approvedAt: null, approvalSignatureId: null, signingKeyVersion: null, exportedAt: null, importLog: null, rowVersion: 1,
-  updatedAt: '2026-11-10T10:00:00Z', items: [{ artifactType: 'WORKFLOW', code: 'CAPA_STD', version: 2 }], deployments: [], ...over,
+  updatedAt: '2026-11-10T10:00:00Z', discardedBy: null, discardedAt: null, discardReason: null, items: [{ artifactType: 'WORKFLOW', code: 'CAPA_STD', version: 2 }], deployments: [], ...over,
 });
 
 const workflow = (over: Partial<CurrentWorkflow> = {}): CurrentWorkflow => ({
@@ -363,6 +363,64 @@ describe('Package pages', () => {
       expect(el.textContent).toContain('new records start on its workflows');
       expect(el.querySelector('table[aria-label="Deployments"]')!.textContent).toContain('CAPA_STD version 2: ADD');
       expect(button(el, 'Deploy and sign…')).toBeUndefined();
+    });
+
+    it('discards an imported package with a reason, keeps it, and offers no way to deploy it afterwards', async () => {
+      const { fixture, el } = await render(pkg({ status: 'IMPORTED', rowVersion: 4 }), ['cfg.package:deploy', 'esig.sign']);
+      expect(button(el, 'Discard package')!.disabled).toBe(true); // a reason is required
+
+      type(el, 'input[maxlength="1000"]', '  Wrong release for this environment ');
+      fixture.detectChanges();
+      expect(button(el, 'Discard package')!.disabled).toBe(false);
+      button(el, 'Discard package')!.click();
+
+      const req = http.expectOne(`${url}/discard`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.headers.get('If-Match')).toBe('"4"');
+      expect(req.request.body).toEqual({ comment: 'Wrong release for this environment' });
+      req.flush(pkg({
+        status: 'DISCARDED', rowVersion: 5, discardedBy: 's1', discardedAt: '2026-11-10T13:00:00Z', discardReason: 'Wrong release for this environment',
+      }));
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(el.querySelector('h1')!.textContent).toContain('Discarded');
+      expect(el.querySelector('[aria-label="Discarded"]')!.textContent).toContain('Wrong release for this environment');
+      expect(el.querySelector('.banner.ok')!.textContent).toContain('kept for the record');
+      expect(button(el, 'Deploy and sign…')).toBeUndefined();
+      expect(button(el, 'Discard package')).toBeUndefined();
+    });
+
+    it('does not offer to discard without the deploy permission', async () => {
+      const { el } = await render(pkg({ status: 'IMPORTED' }), ['cfg.package:approve', 'esig.sign']);
+
+      expect(button(el, 'Discard package')).toBeUndefined();
+      expect(el.querySelector('input[maxlength="1000"]')).toBeNull();
+    });
+
+    it('shows why a discard was refused, for example a package someone else already changed', async () => {
+      const { fixture, el } = await render(pkg({ status: 'IMPORTED' }), ['cfg.package:deploy']);
+      type(el, 'input[maxlength="1000"]', 'no longer needed');
+      fixture.detectChanges();
+
+      button(el, 'Discard package')!.click();
+      http.expectOne(`${url}/discard`).flush(
+        { title: 'Stale version', detail: 'The package was changed by someone else. Reload it and review the changes.' },
+        { status: 412, statusText: 'Precondition Failed' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(el.querySelector('.banner.error')!.textContent).toContain('changed by someone else');
+      expect(el.querySelector('h1')!.textContent).toContain('Imported');
+    });
+
+    it('shows a discarded package with its reason and no steps to take', async () => {
+      const { el } = await render(
+        pkg({ status: 'DISCARDED', discardedBy: 's1', discardedAt: '2026-11-10T13:00:00Z', discardReason: 'Superseded by WF-2026-02' }),
+        ['cfg.package:deploy', 'cfg.package:approve', 'esig.sign']);
+
+      expect(el.querySelector('[aria-label="Discarded"]')!.textContent).toContain('Superseded by WF-2026-02');
+      for (const label of ['Deploy and sign…', 'Approve and sign…', 'Export package file', 'Discard package']) expect(button(el, label)).toBeUndefined();
     });
 
     it('shows the server’s reason when the signature step is refused', async () => {

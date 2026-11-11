@@ -1,4 +1,5 @@
 import { Component, computed, inject, input, OnInit, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService, describeError, EsigApi, formatTimestamp, SigningOptions } from '../../core/api/api';
@@ -216,7 +217,7 @@ export class PackageListPage implements OnInit {
  */
 @Component({
   selector: 'pos-package-detail',
-  imports: [RouterLink, EsigDialog, Signatures],
+  imports: [ReactiveFormsModule, RouterLink, EsigDialog, Signatures],
   template: `
     <p><a routerLink="/packages">← Packages</a></p>
     @if (error()) {<p class="banner error" role="alert">{{ error() }}</p>}
@@ -251,6 +252,21 @@ export class PackageListPage implements OnInit {
           <span class="hint">Deploying needs the package deploy permission.</span>
         }
       </div>
+
+      @if (p.status === 'IMPORTED' && canDeploy()) {
+        <div class="steps">
+          <label class="wide">Reason (required to discard)
+            <input [formControl]="comment" maxlength="1000" placeholder="e.g. Wrong release for this environment" />
+          </label>
+          <button type="button" class="secondary" [disabled]="busy() || !commentText().trim()" (click)="discard()">Discard package</button>
+        </div>
+        <p class="hint">Discarding keeps the package and the reason for the record. It cannot be deployed afterwards, and its code is not reused.</p>
+      }
+      @if (p.status === 'DISCARDED') {
+        <section class="banner warning" aria-label="Discarded">
+          <strong>Discarded</strong> {{ p.discardedAt ? time(p.discardedAt) : '' }}. Reason: {{ p.discardReason }}
+        </section>
+      }
 
       @if (p.approvalSignatureId || p.status === 'DEPLOYED') {
         <pos-signatures [entity]="entity" [recordId]="p.id" [refresh]="signatureRefresh()" />
@@ -307,6 +323,8 @@ export class PackageListPage implements OnInit {
     th, td { text-align: left; border-bottom: 1px solid var(--pos-border); padding: 4px 6px; vertical-align: top; }
     pre { margin: 0; white-space: pre-wrap; font-size: 0.8rem; }
     .steps { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin: 12px 0 20px; }
+    label { display: flex; flex-direction: column; font-size: 0.875rem; gap: 4px; margin: 0; }
+    .wide { flex: 1 1 320px; }
     .hint { color: var(--pos-muted); }
   `,
 })
@@ -334,6 +352,10 @@ export class PackageDetailPage implements OnInit {
   readonly error = signal<string | null>(null);
   readonly notice = signal<string | null>(null);
   readonly busy = signal(false);
+
+  readonly comment = new FormControl('', { nonNullable: true });
+  /** The reason as a signal, so the Discard button follows what is typed. */
+  readonly commentText = toSignal(this.comment.valueChanges, { initialValue: '' });
 
   readonly canApprove = computed(() => this.auth.hasPermission('cfg.package:approve'));
   readonly canDeploy = computed(() => this.auth.hasPermission('cfg.package:deploy'));
@@ -422,6 +444,27 @@ export class PackageDetailPage implements OnInit {
   /** A reload must not try to use the challenge again. */
   private forgetChallenge(): void {
     void this.router.navigate(['/packages', this.id()], { replaceUrl: true });
+  }
+
+  /** Sets an imported package aside. Nothing is deleted; the reason is required and kept. */
+  discard(): void {
+    const p = this.pkg();
+    const reason = this.comment.value.trim();
+    if (!p || !reason) return;
+    this.busy.set(true);
+    this.error.set(null);
+    this.api.discard(p.id, p.rowVersion, reason).subscribe({
+      next: (updated) => {
+        this.pkg.set(updated);
+        this.comment.reset('');
+        this.busy.set(false);
+        this.notice.set('Discarded. Nothing was deployed. The package and your reason are kept for the record.');
+      },
+      error: (e: unknown) => {
+        this.busy.set(false);
+        this.error.set(describeError(e));
+      },
+    });
   }
 
   /** Saves the approved package as a file, exactly as the server wrote it, to carry to the other installation. */

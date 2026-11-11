@@ -41,7 +41,7 @@ generated from the tests instead.
 | URS-CFG-004 | Administrators shall configure workflows, approval routes, escalations, and notifications | M · Y · H | — |
 | URS-CFG-005 | Administrators shall configure dashboards and reports | H · N · L | — |
 | URS-CFG-006 | All configuration artefacts shall be versioned with full history and comparison | M · Y · H | — |
-| URS-CFG-007 | Configuration shall be promoted between environments only as approved, hash-verified packages; direct edits in production shall be prevented | M · Y · H | `ConfigPackageApiTests (25 tests)` |
+| URS-CFG-007 | Configuration shall be promoted between environments only as approved, hash-verified packages; direct edits in production shall be prevented | M · Y · H | `ConfigPackageApiTests (29 tests)` |
 | URS-CFG-008 | Administrators shall be able to define custom entities (no code) that inherit audit trail, workflow, and e-signature capabilities | H · Y · M | — |
 
 ## 8.3 Workflow (WF)
