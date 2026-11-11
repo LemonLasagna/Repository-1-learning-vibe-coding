@@ -719,39 +719,63 @@ public sealed class ConfigPackageApiTests : IClassFixture<PostgresFixture>, IAsy
     }
 
     [Fact]
-    public async Task Only_an_imported_package_can_be_discarded()
+    public async Task Only_a_built_package_not_yet_approved_or_an_imported_one_not_yet_deployed_can_be_discarded()
     {
+        // Built, never approved: anyone who may build packages can discard it.
         var version = await ReleaseCapaAsync(_source);
         var (built, _) = await BuildAsync(_source, NewCode(), version);
-        var draft = await DiscardAsync(_source, Admin, built, "no");
-        Assert.Equal(HttpStatusCode.Conflict, draft.StatusCode);
-        Assert.Equal("WRONG_STATUS", await Authoring.CodeOf(draft));
+        var draft = await DiscardAsync(_source, AuthorOnly, built, "built by mistake");
+        Assert.Equal(HttpStatusCode.OK, draft.StatusCode);
+        Assert.Equal("DISCARDED", (await draft.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("status").GetString());
 
+        // Approved (and so possibly exported): no longer.
+        var (approved, _) = await BuildAsync(_source, NewCode(), version);
+        Assert.Equal(HttpStatusCode.Created, (await ApproveAsync(_source, Admin, approved)).StatusCode);
+        var afterApproval = await DiscardAsync(_source, Admin, approved, "no");
+        Assert.Equal(HttpStatusCode.Conflict, afterApproval.StatusCode);
+        Assert.Equal("WRONG_STATUS", await Authoring.CodeOf(afterApproval));
+
+        // Imported and deployed: no longer.
         var deployed = await ImportAsync(_target, await ApprovedFileAsync(await ReleaseCapaAsync(_source)));
         Assert.Equal(HttpStatusCode.Created, (await DeployAsync(_target, Admin, deployed)).StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, (await DiscardAsync(_target, Admin, deployed, "no")).StatusCode);
 
+        // Already discarded: no.
         var discarded = await ImportAsync(_target, await ApprovedFileAsync(await ReleaseCapaAsync(_source)));
         Assert.Equal(HttpStatusCode.OK, (await DiscardAsync(_target, Admin, discarded, "wrong one")).StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, (await DiscardAsync(_target, Admin, discarded, "again")).StatusCode);
     }
 
     [Fact]
-    public async Task A_discarded_package_cannot_be_imported_again_under_the_same_code_and_the_message_says_what_to_do()
+    public async Task A_discarded_package_releases_its_code_so_the_same_package_can_be_built_or_imported_again()
     {
         var version = await ReleaseCapaAsync(_source);
-        var file = await ApprovedFileAsync(version);
-        var id = await ImportAsync(_target, file);
-        Assert.Equal(HttpStatusCode.OK, (await DiscardAsync(_target, Admin, id, "wrong release")).StatusCode);
+        var code = NewCode();
+        var (first, _) = await BuildAsync(_source, code, version);
+        Assert.Equal(HttpStatusCode.OK, (await DiscardAsync(_source, Admin, first, "wrong items")).StatusCode);
 
-        var again = await _target.ClientFor(Admin).PostAsJsonAsync("/api/config/v1/packages/import", file);
+        // The code is free again at the source.
+        var (second, _) = await BuildAsync(_source, code, version);
+        Assert.NotEqual(first, second);
+        // While a live package holds it, it is taken.
+        var taken = await _source.ClientFor(Admin).PostAsJsonAsync("/api/config/v1/packages", Body(code, version));
+        Assert.Equal(HttpStatusCode.Conflict, taken.StatusCode);
 
-        Assert.Equal(HttpStatusCode.Conflict, again.StatusCode);
-        var problem = await again.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("PACKAGE_EXISTS", problem.GetProperty("code").GetString());
-        var detail = problem.GetProperty("detail").GetString()!;
-        Assert.Contains("discarded", detail);
-        Assert.Contains("new code", detail);
+        // And at the target: import, discard, import the same file again, then deploy the new import.
+        Assert.Equal(HttpStatusCode.Created, (await ApproveAsync(_source, Admin, second)).StatusCode);
+        var file = await ExportAsync(_source, second);
+        var imported = await ImportAsync(_target, file);
+        Assert.Equal(HttpStatusCode.OK, (await DiscardAsync(_target, Admin, imported, "imported too early")).StatusCode);
+        var again = await ImportAsync(_target, file);
+        Assert.NotEqual(imported, again);
+        var duplicate = await _target.ClientFor(Admin).PostAsJsonAsync("/api/config/v1/packages/import", file);
+        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode); // the live import holds the code
+
+        Assert.Equal(HttpStatusCode.Created, (await DeployAsync(_target, Admin, again)).StatusCode);
+        Assert.Equal("DISCARDED", (await PackageAsync(_target, imported)).GetProperty("status").GetString());
+        Assert.Equal(version, await CurrentCapaVersionAsync(_target));
+        var list = await (await _target.ClientFor(Admin).GetAsync("/api/config/v1/packages")).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(2, list.GetProperty("items").EnumerateArray().Count(p => p.GetProperty("code").GetString() == code));
     }
 
     // ---- production lock ------------------------------------------------------------------------------------------------------

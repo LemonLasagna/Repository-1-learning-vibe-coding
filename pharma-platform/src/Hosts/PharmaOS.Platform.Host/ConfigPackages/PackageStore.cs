@@ -30,19 +30,12 @@ public sealed class PackageStore(NpgsqlConnection conn, NpgsqlTransaction tx)
 
     private NpgsqlCommand Cmd(string sql) => new(sql, conn, tx);
 
+    /// <summary>True when a package that has not been discarded holds this code. A discarded package no longer holds its code.</summary>
     public async Task<bool> CodeExistsAsync(string code, CancellationToken ct)
     {
-        await using var cmd = Cmd("SELECT 1 FROM meta.config_package WHERE code = @code");
+        await using var cmd = Cmd("SELECT 1 FROM meta.config_package WHERE code = @code AND status <> 'DISCARDED'");
         cmd.Parameters.AddWithValue("code", code);
         return await cmd.ExecuteScalarAsync(ct) is not null;
-    }
-
-    /// <summary>The status of the package with this code, or null when there is none.</summary>
-    public async Task<string?> StatusOfCodeAsync(string code, CancellationToken ct)
-    {
-        await using var cmd = Cmd("SELECT status FROM meta.config_package WHERE code = @code");
-        cmd.Parameters.AddWithValue("code", code);
-        return await cmd.ExecuteScalarAsync(ct) as string;
     }
 
     /// <summary>Stores the package and its items. <paramref name="artifactIds"/> holds the source id of each item, by code and version.</summary>

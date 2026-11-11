@@ -562,7 +562,7 @@ erDiagram
     int review_frequency_days
   }
   config_package {
-    varchar code UK
+    varchar code
     varchar name
     varchar version_label
     varchar source_environment

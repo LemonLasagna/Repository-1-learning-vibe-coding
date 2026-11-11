@@ -70,6 +70,8 @@ class Table:
     flags: set[str]
     columns: list[Column]
     uniques: list[list[str]] = field(default_factory=list)
+    # Unique only among the rows a condition keeps: UW(cols;condition), e.g. a code that a discarded record no longer holds.
+    partial_uniques: list[tuple[list[str], str]] = field(default_factory=list)
 
     @property
     def fq(self) -> str:
@@ -117,12 +119,17 @@ def parse(path: Path) -> list[Schema]:
                     raise SystemExit(f"{lineno}: unknown type {ctype!r} in {tname}.{cname}")
                 cols.append(Column(cname, TYPES[ctype], not_null, unique))
         uniques = []
+        partial = []
         for extra in parts[2:]:
             m = re.fullmatch(r"U\(([^)]*)\)", extra)
-            if not m:
+            w = re.fullmatch(r"UW\(([^;]*);(.*)\)", extra)
+            if m:
+                uniques.append([c.strip() for c in m.group(1).split(",")])
+            elif w:
+                partial.append(([c.strip() for c in w.group(1).split(",")], w.group(2).strip()))
+            else:
                 raise SystemExit(f"{lineno}: bad table option {extra!r}")
-            uniques.append([c.strip() for c in m.group(1).split(",")])
-        cur.tables.append(Table(cur.name, tname, flags, cols, uniques))
+        cur.tables.append(Table(cur.name, tname, flags, cols, uniques, partial))
     return schemas
 
 
@@ -482,6 +489,10 @@ def gen_indexes(schemas: list[Schema]) -> str:
                         out.append(f"CREATE INDEX {ident('tg', t.schema, t.name, c.name)} ON {t.fq} USING gin ({c.name} gin_trgm_ops);")
             for u in t.uniques:
                 out.append(f"CREATE UNIQUE INDEX {ident('ux', t.schema, t.name, *u)} ON {t.fq} (tenant_id, {', '.join(u)});")
+            for u, condition in t.partial_uniques:
+                out.append(f"CREATE UNIQUE INDEX {ident('ux', t.schema, t.name, *u)} ON {t.fq} (tenant_id, {', '.join(u)}) WHERE {condition};")
+                if len(u) == 1 and next(c for c in t.columns if c.name == u[0]).sqltype.startswith("varchar"):
+                    out.append(f"CREATE INDEX {ident('tg', t.schema, t.name, u[0])} ON {t.fq} USING gin ({u[0]} gin_trgm_ops);")
             if "status" in colnames:
                 out.append(f"CREATE INDEX {ident('ix', t.schema, t.name, 'status')} ON {t.fq} (tenant_id, status);")
             for dc in ("due_date", "next_review_date", "expiry_date"):
@@ -618,6 +629,8 @@ def gen_dictionary(schemas: list[Schema]) -> str:
                 out.append(f"| {c.name} | {c.sqltype} | {'N' if c.not_null else 'Y'} | {key} |")
             for u in t.uniques:
                 out.append(f"| _unique_ | ({', '.join(u)}) | | |")
+            for u, condition in t.partial_uniques:
+                out.append(f"| _unique_ | ({', '.join(u)}) where {condition} | | |")
             out.append("")
     return "\n".join(out)
 
@@ -634,7 +647,7 @@ def main() -> None:
             cols = [c.name for c in t.columns]
             if len(cols) != len(set(cols)):
                 raise SystemExit(f"duplicate column in {t.fq}")
-            for u in t.uniques:
+            for u in t.uniques + [u for u, _ in t.partial_uniques]:
                 for c in u:
                     if c not in cols:
                         raise SystemExit(f"{t.fq}: unique on unknown column {c}")

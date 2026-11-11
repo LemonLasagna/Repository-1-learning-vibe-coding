@@ -71,9 +71,11 @@ Workflow definitions move between installations (CONFIG, VAL, PROD) as signed pa
    Everything is checked again at that moment; if anything fails, nothing is released and no signature is kept. Each deployment is
    recorded.
 
-An imported package that should not be deployed is **discarded** (`cfg.package:deploy`, a reason is required). Nothing is deleted: the
-package, its import record and the reason stay, and it can never be deployed. A discarded package's code is not reused, so importing the
-same file again is refused; build the package again under a new code in the source installation.
+A package that should not go further is **discarded** with a reason: one that was built and never approved (`cfg.package:author`), or
+one that was imported and never deployed (`cfg.package:deploy`). Nothing is deleted. The package, its items, its import record and the
+reason stay, and it can no longer be approved, exported or deployed. Its code is free to use again, so a corrected package can be built
+or imported under the same code. (The database enforces this with a unique index on the code that ignores discarded packages, so an
+existing installation needs its schema recreated: `install.sh --recreate`.)
 
 All five steps have screens under **Packages** in the menu (shown to users with `cfg.package:author`). Approve and deploy open the same
 e-signature dialog as other signed steps and need `esig.sign` as well. In a `PROD` environment the workflow screens show a banner and

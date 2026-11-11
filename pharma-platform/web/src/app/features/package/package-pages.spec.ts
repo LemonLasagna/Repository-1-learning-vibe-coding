@@ -387,8 +387,33 @@ describe('Package pages', () => {
       expect(el.querySelector('h1')!.textContent).toContain('Discarded');
       expect(el.querySelector('[aria-label="Discarded"]')!.textContent).toContain('Wrong release for this environment');
       expect(el.querySelector('.banner.ok')!.textContent).toContain('kept for the record');
+      expect(el.querySelector('.banner.ok')!.textContent).toContain('code can be used again');
       expect(button(el, 'Deploy and sign…')).toBeUndefined();
       expect(button(el, 'Discard package')).toBeUndefined();
+    });
+
+    it('discards a package that was built but never approved, for anyone who may build packages', async () => {
+      const { fixture, el } = await render(pkg({ status: 'DRAFT', rowVersion: 2 }), []); // only the author permission
+      expect(button(el, 'Discard package')!.disabled).toBe(true);
+
+      type(el, 'input[maxlength="1000"]', 'Built from the wrong versions');
+      fixture.detectChanges();
+      button(el, 'Discard package')!.click();
+      const req = http.expectOne(`${url}/discard`);
+      expect(req.request.headers.get('If-Match')).toBe('"2"');
+      expect(req.request.body).toEqual({ comment: 'Built from the wrong versions' });
+      req.flush(pkg({ status: 'DISCARDED', rowVersion: 3, discardedBy: 's1', discardedAt: '2026-11-10T13:00:00Z', discardReason: 'Built from the wrong versions' }));
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(el.querySelector('[aria-label="Discarded"]')!.textContent).toContain('Built from the wrong versions');
+      expect(button(el, 'Discard package')).toBeUndefined();
+    });
+
+    it('does not offer to discard an approved package', async () => {
+      const { el } = await render(pkg({ status: 'APPROVED', approvalSignatureId: 'sig1', signingKeyVersion: 1 }), ['cfg.package:approve', 'cfg.package:deploy', 'esig.sign']);
+      expect(button(el, 'Discard package')).toBeUndefined();
+      expect(el.querySelector('input[maxlength="1000"]')).toBeNull();
     });
 
     it('does not offer to discard without the deploy permission', async () => {
