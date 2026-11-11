@@ -72,5 +72,15 @@ export const routes: Routes = [
     title: 'Workflow draft · PharmaOS',
     loadComponent: () => import('./features/workflow/workflow-pages').then((m) => m.WorkflowDetailPage),
   },
+  {
+    path: 'packages',
+    title: 'Configuration packages · PharmaOS',
+    loadComponent: () => import('./features/package/package-pages').then((m) => m.PackageListPage),
+  },
+  {
+    path: 'packages/:id',
+    title: 'Configuration package · PharmaOS',
+    loadComponent: () => import('./features/package/package-pages').then((m) => m.PackageDetailPage),
+  },
   { path: '**', redirectTo: 'inbox' },
 ];
