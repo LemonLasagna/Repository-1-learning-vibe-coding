@@ -43,6 +43,8 @@ const signed = (meaning: string, label: string): Signature => ({
   manifest: 'Electronically signed by Olu Owner (o.owner)', appliesToCurrentVersion: true,
 });
 
+const environmentName = 'DEV';
+
 const button = (el: HTMLElement, text: string) =>
   Array.from(el.querySelectorAll('button')).find((b) => b.textContent?.trim() === text) as HTMLButtonElement | undefined;
 
@@ -66,9 +68,10 @@ describe('Workflow pages', () => {
   afterEach(() => http.verify());
 
   describe('WorkflowListPage', () => {
-    async function render(workflows: CurrentWorkflow[], drafts: WorkflowDraft[] = []) {
+    async function render(workflows: CurrentWorkflow[], drafts: WorkflowDraft[] = [], production = false) {
       const fixture = TestBed.createComponent(WorkflowListPage);
       fixture.detectChanges();
+      http.expectOne('/api/config/v1/environment').flush({ name: environmentName, production });
       http.expectOne('/api/workflow/v1/workflows').flush({ items: workflows });
       http.expectOne('/api/workflow/v1/definitions').flush({ items: drafts });
       await fixture.whenStable();
@@ -97,19 +100,28 @@ describe('Workflow pages', () => {
       expect(warning.textContent).toContain('The release defines version 3 of CAPA_STD');
       expect(warning.textContent).toContain('Give the release a higher version number');
     });
+
+    it('in production says workflows change only by a package and does not offer new drafts', async () => {
+      const { el } = await render([workflow()], [], true);
+
+      expect(el.querySelector('.banner.warning')!.textContent).toContain('production environment');
+      expect(el.querySelector('.banner.warning a')!.getAttribute('href')).toBe('/packages');
+      expect(button(el, 'New draft')!.disabled).toBe(true);
+    });
   });
 
   describe('WorkflowDetailPage', () => {
     const draftUrl = '/api/workflow/v1/definitions/d1';
 
     /** Renders the draft page; flushes the requests the page makes on opening. */
-    async function render(d: WorkflowDraft, permissions: string[], esig?: string) {
+    async function render(d: WorkflowDraft, permissions: string[], esig?: string, production = false) {
       vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
       TestBed.inject(AuthService).user.set(user('wf.definition:author', ...permissions));
       const fixture = TestBed.createComponent(WorkflowDetailPage);
       fixture.componentRef.setInput('id', d.id);
       if (esig) fixture.componentRef.setInput('esig', esig);
       fixture.detectChanges();
+      http.expectOne('/api/config/v1/environment').flush({ name: environmentName, production });
       http.expectOne(draftUrl).flush(d, { headers: { ETag: `"${d.rowVersion}"` } });
       if (permissions.includes('esig.sign')) http.expectOne('/api/esig/v1/meanings?entity=wf.definition').flush(options);
       const completion = esig ? http.expectOne(`/api/esig/v1/challenges/${esig}/complete`) : null;
@@ -268,6 +280,18 @@ describe('Workflow pages', () => {
       expect(el.textContent).toContain('Signed: Released by Olu Owner');
       expect(el.textContent).toContain('New records start on this version');
       expect(button(el, 'Activate and sign…')).toBeUndefined();
+    });
+
+    it('in production shows the draft read-only: no editing, no signing, no rejecting', async () => {
+      const { el } = await render(draft({ status: 'VALID' }), ['wf.definition:approve', 'esig.sign'], undefined, true);
+
+      expect(el.querySelector('.banner.warning')!.textContent).toContain('production environment');
+      expect(button(el, 'Submit and sign…')).toBeUndefined();
+      expect(button(el, 'Save draft')).toBeUndefined();
+      expect(el.querySelector('textarea')).toBeNull();
+      expect(el.textContent).toContain('Transitions');
+
+      http.verify();
     });
   });
 });

@@ -646,6 +646,20 @@ public sealed class ConfigPackageApiTests : IClassFixture<PostgresFixture>, IAsy
         Assert.Equal("PACKAGE_NOT_TRUSTED", await Authoring.CodeOf(signature));
     }
 
+    [Fact]
+    public async Task The_environment_endpoint_tells_any_signed_in_user_which_environment_this_is_and_whether_it_is_production()
+    {
+        var viewer = _source.ClientFor(NoAccess);
+        var here = await (await viewer.GetAsync("/api/config/v1/environment")).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("CONFIG", here.GetProperty("name").GetString());
+        Assert.False(here.GetProperty("production").GetBoolean());
+
+        using var prod = new PlatformFactory(_targetDb, settings: new Dictionary<string, string> { ["ConfigPackages:EnvironmentName"] = "prod" },
+            configure: s => s.AddSingleton<IPackageSigner>(_targetSigner));
+        var there = await (await prod.ClientFor(NoAccess).GetAsync("/api/config/v1/environment")).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(there.GetProperty("production").GetBoolean());
+    }
+
     // ---- production lock ------------------------------------------------------------------------------------------------------
 
     [Fact]

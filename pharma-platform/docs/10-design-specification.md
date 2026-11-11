@@ -99,8 +99,10 @@ artefacts (DRAFT) ─┐
 OpenBao transit key when QA approves (the e-signature and the key signature are one transaction). The import verifies the hash and
 the signature against a configured list of trusted public keys, never the key written in the file, and dry-runs each item with the
 same rules as workflow authoring. Deploy is an e-signature (RELEASED) that re-checks everything and releases the items atomically.
-In an environment named PROD, workflow authoring is read-only. Not built yet: other artefact types, dry-runs of in-flight record
-migrations (not needed for workflows, which pin their version per record), and a screen for any of it.
+In an environment named PROD, workflow authoring is read-only, and the workflow screens say so. The package screens (Packages in the
+menu) build, approve, export, import and deploy; approving and deploying are signed in the same e-signature dialog as other steps.
+Not built yet: other artefact types, dry-runs of in-flight record migrations (not needed for workflows, which pin their version per
+record), and discarding an imported package.
 
 ## 10.5 E-signature design
 

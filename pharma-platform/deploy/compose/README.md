@@ -71,6 +71,10 @@ Workflow definitions move between installations (CONFIG, VAL, PROD) as signed pa
    Everything is checked again at that moment; if anything fails, nothing is released and no signature is kept. Each deployment is
    recorded.
 
+All five steps have screens under **Packages** in the menu (shown to users with `cfg.package:author`). Approve and deploy open the same
+e-signature dialog as other signed steps and need `esig.sign` as well. In a `PROD` environment the workflow screens show a banner and
+become read-only.
+
 Settings (environment variables use `__`, e.g. `ConfigPackages__EnvironmentName`):
 
 | Setting | Meaning |

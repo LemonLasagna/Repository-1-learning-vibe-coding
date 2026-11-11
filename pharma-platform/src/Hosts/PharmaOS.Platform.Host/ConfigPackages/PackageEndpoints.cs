@@ -23,6 +23,9 @@ public static partial class PackageEndpoints
 
     public static void MapConfigPackageEndpoints(this IEndpointRouteBuilder app)
     {
+        // Any signed-in user may ask which environment this is: the screens show production as read-only.
+        app.MapGet("/api/config/v1/environment", (IOptions<ConfigPackageOptions> o) =>
+            Results.Ok(new { name = o.Value.EnvironmentName, production = o.Value.IsProduction }));
         var group = app.MapGroup(Base);
         group.MapPost("", Build).RequireAuthorization(Permissions.ConfigPackageAuthor);
         group.MapGet("", List).RequireAuthorization(Permissions.ConfigPackageAuthor);

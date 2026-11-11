@@ -6,6 +6,7 @@ import { AuthService, describeError, EsigApi, formatTimestamp, SigningOptions } 
 import {
   AFTER_SIGNATURE, CurrentWorkflow, DRAFT_STATUS_LABELS, SIGNED_STEPS, SignedStep, WorkflowApi, WorkflowDraft, WorkflowTransition,
 } from '../../core/api/workflow-api';
+import { ConfigPackageApi } from '../../core/api/config-package-api';
 import { EsigDialog, SignConfirmation, SignIntent } from '../../shared/esig-dialog';
 import { Signatures } from '../../shared/signatures';
 
@@ -15,6 +16,12 @@ import { Signatures } from '../../shared/signatures';
   imports: [RouterLink],
   template: `
     <h1>Workflows</h1>
+    @if (production()) {
+      <p class="banner warning" role="status">
+        This is a production environment: workflows are read-only here. They change only by deploying an approved
+        <a routerLink="/packages">configuration package</a>.
+      </p>
+    }
     @if (error()) {<p class="banner error" role="alert">{{ error() }}</p>}
     @for (w of workflows(); track w.code) {
       @if (w.releaseNotApplied) {
@@ -35,7 +42,7 @@ import { Signatures } from '../../shared/signatures';
             <td>{{ w.name }}</td>
             <td><code>{{ w.code }}</code></td>
             <td>{{ w.version }}</td>
-            <td><button type="button" class="secondary small" [disabled]="busy()" (click)="newDraft(w)">New draft</button></td>
+            <td><button type="button" class="secondary small" [disabled]="busy() || production()" (click)="newDraft(w)">New draft</button></td>
           </tr>
         } @empty {
           <tr><td colspan="4">Loading…</td></tr>
@@ -71,6 +78,7 @@ import { Signatures } from '../../shared/signatures';
 })
 export class WorkflowListPage implements OnInit {
   private readonly api = inject(WorkflowApi);
+  private readonly packages = inject(ConfigPackageApi);
   private readonly router = inject(Router);
 
   protected readonly statusLabels = DRAFT_STATUS_LABELS;
@@ -79,8 +87,11 @@ export class WorkflowListPage implements OnInit {
   readonly drafts = signal<WorkflowDraft[] | null>(null);
   readonly error = signal<string | null>(null);
   readonly busy = signal(false);
+  /** True in a production environment, where workflows change only by deploying a package. */
+  readonly production = signal(false);
 
   ngOnInit(): void {
+    this.packages.environment().subscribe({ next: (e) => this.production.set(e.production), error: () => this.production.set(false) });
     this.api.workflows().subscribe({ next: (w) => this.workflows.set(w), error: (e: unknown) => this.error.set(describeError(e)) });
     this.api.list().subscribe({
       next: (d) => this.drafts.set(d),
@@ -115,6 +126,12 @@ export class WorkflowListPage implements OnInit {
   imports: [ReactiveFormsModule, RouterLink, EsigDialog, Signatures],
   template: `
     <p><a routerLink="/workflows">← Workflows</a></p>
+    @if (production()) {
+      <p class="banner warning" role="status">
+        This is a production environment: workflows are read-only here. They change only by deploying an approved
+        <a routerLink="/packages">configuration package</a>.
+      </p>
+    }
     @if (error()) {<p class="banner error" role="alert">{{ error() }}</p>}
     @if (notice()) {<p class="banner ok" role="status">{{ notice() }}</p>}
 
@@ -203,6 +220,7 @@ export class WorkflowListPage implements OnInit {
 })
 export class WorkflowDetailPage implements OnInit {
   private readonly api = inject(WorkflowApi);
+  private readonly packages = inject(ConfigPackageApi);
   private readonly auth = inject(AuthService);
   private readonly esig = inject(EsigApi);
   private readonly router = inject(Router);
@@ -230,8 +248,10 @@ export class WorkflowDetailPage implements OnInit {
   /** The comment as a signal, so the Reject button follows what is typed. */
   readonly commentText = toSignal(this.comment.valueChanges, { initialValue: '' });
 
-  readonly editable = computed(() => this.draft()?.status === 'DRAFT' || this.draft()?.status === 'VALID');
-  readonly canApprove = computed(() => this.auth.hasPermission('wf.definition:approve'));
+  /** True in a production environment, where workflows change only by deploying a package. */
+  readonly production = signal(false);
+  readonly editable = computed(() => !this.production() && (this.draft()?.status === 'DRAFT' || this.draft()?.status === 'VALID'));
+  readonly canApprove = computed(() => !this.production() && this.auth.hasPermission('wf.definition:approve'));
   readonly canSign = computed(() => this.auth.hasPermission('esig.sign'));
   /** True when the draft is at a step this user could take, if they could sign. */
   readonly signingNeeded = computed(() => {
@@ -240,6 +260,7 @@ export class WorkflowDetailPage implements OnInit {
   });
 
   ngOnInit(): void {
+    this.packages.environment().subscribe({ next: (e) => this.production.set(e.production), error: () => this.production.set(false) });
     this.load();
     if (this.canSign()) {
       this.esig.options(ENTITY).subscribe({ next: (o) => this.options.set(o), error: () => this.options.set(null) });
