@@ -38,7 +38,7 @@ public static partial class PackageEndpoints
             Problem(StatusCodes.Status400BadRequest, "SIGNATURE_REQUIRED", "Signature required",
                 $"Deploying a package is an electronic signature. Start it with POST /api/esig/v1/challenges (entity {PackageSignable.Entity}, recordId {id}, action {PackageSignable.Deploy}, meaning RELEASED)."))
             .RequireAuthorization(Permissions.ConfigPackageDeploy);
-        group.MapPost("{id:guid}/discard", Discard).RequireAuthorization(Permissions.ConfigPackageDeploy);
+        group.MapPost("{id:guid}/discard", Discard).RequireAuthorization(Permissions.ConfigPackageAuthor);
         group.MapPost("{id:guid}/export", Export).RequireAuthorization(Permissions.ConfigPackageAuthor);
         group.MapPost("import", Import).RequireAuthorization(Permissions.ConfigPackageAuthor);
     }
@@ -170,8 +170,9 @@ public static partial class PackageEndpoints
     public sealed record DiscardBody(string? Comment);
 
     /// <summary>
-    /// Sets an imported package aside so it cannot be deployed. Nothing is deleted: the package, its import record and the reason stay,
-    /// and its code stays taken. Only a package that has not been deployed can be discarded, and the reason is required.
+    /// Sets a package aside so it cannot be approved, exported or deployed. Nothing is deleted: the package, its items, its import
+    /// record and the reason stay, but its code is free to use again. A package that was built and never approved (anyone who may build
+    /// packages) or one that was imported and never deployed (needs the deploy permission) can be discarded; the reason is required.
     /// </summary>
     private static async Task<IResult> Discard(
         Guid id, DiscardBody? body, PlatformDbContext db, IGxpContextAccessor gxp, HttpContext http, CancellationToken ct)
@@ -188,9 +189,11 @@ public static partial class PackageEndpoints
         var row = await store.GetAsync(id, forUpdate: true, ct);
         if (row is null) return Results.NotFound();
         if (row.RowVersion != expected) return Stale("package");
-        if (row.Status != PackageStore.Imported)
+        if (row.Status is not (PackageStore.Draft or PackageStore.Imported))
             return Problem(StatusCodes.Status409Conflict, "WRONG_STATUS", "Not possible in this status",
-                $"The package is {row.Status}; only an imported package that has not been deployed can be discarded.");
+                $"The package is {row.Status}; only a built package that has not been approved, or an imported package that has not been deployed, can be discarded.");
+        if (row.Status == PackageStore.Imported && !http.User.HasClaim(Permissions.ClaimType, Permissions.ConfigPackageDeploy))
+            return Problem(StatusCodes.Status403Forbidden, "MISSING_PERMISSION", "Not allowed", $"Missing permission '{Permissions.ConfigPackageDeploy}'");
 
         var columns = new Dictionary<string, object?>
         {
@@ -222,11 +225,9 @@ public static partial class PackageEndpoints
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var (conn, sqlTx) = Sql(db);
         var packages = new PackageStore(conn, sqlTx);
-        if (await packages.StatusOfCodeAsync(package.Document.Code, ct) is { } existing)
+        if (await packages.CodeExistsAsync(package.Document.Code, ct))
             return Problem(StatusCodes.Status409Conflict, "PACKAGE_EXISTS", "Package already here",
-                existing == PackageStore.Discarded
-                    ? $"A package with code {package.Document.Code} was imported here and discarded. Package codes are not reused: build the package again under a new code in the source installation."
-                    : $"A package with code {package.Document.Code} already exists in this installation.");
+                $"A package with code {package.Document.Code} already exists in this installation.");
 
         var report = await PackageDryRun.RunAsync(new WorkflowDraftStore(conn, sqlTx), new WorkflowStore(conn, sqlTx), package.Document, ct);
         if (report.Any(r => r.Outcome == PackageDryRun.Refused))

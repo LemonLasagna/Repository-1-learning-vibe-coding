@@ -253,14 +253,17 @@ export class PackageListPage implements OnInit {
         }
       </div>
 
-      @if (p.status === 'IMPORTED' && canDeploy()) {
+      @if (p.status === 'DRAFT' || (p.status === 'IMPORTED' && canDeploy())) {
         <div class="steps">
           <label class="wide">Reason (required to discard)
             <input [formControl]="comment" maxlength="1000" placeholder="e.g. Wrong release for this environment" />
           </label>
           <button type="button" class="secondary" [disabled]="busy() || !commentText().trim()" (click)="discard()">Discard package</button>
         </div>
-        <p class="hint">Discarding keeps the package and the reason for the record. It cannot be deployed afterwards, and its code is not reused.</p>
+        <p class="hint">
+          Discarding keeps the package and the reason for the record. It cannot be approved, exported or deployed afterwards, and its code
+          can be used again.
+        </p>
       }
       @if (p.status === 'DISCARDED') {
         <section class="banner warning" aria-label="Discarded">
@@ -458,7 +461,7 @@ export class PackageDetailPage implements OnInit {
         this.pkg.set(updated);
         this.comment.reset('');
         this.busy.set(false);
-        this.notice.set('Discarded. Nothing was deployed. The package and your reason are kept for the record.');
+        this.notice.set('Discarded. The package and your reason are kept for the record, and its code can be used again.');
       },
       error: (e: unknown) => {
         this.busy.set(false);

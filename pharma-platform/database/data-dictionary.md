@@ -599,7 +599,7 @@
 
 | Column | Type | Null | Key |
 |---|---|---|---|
-| code | varchar(50) | N | unique/tenant |
+| code | varchar(50) | N |  |
 | name | varchar(255) | N |  |
 | version_label | varchar(50) | N |  |
 | source_environment | varchar(50) | N |  |
@@ -617,6 +617,7 @@
 | discarded_by | uuid | Y |  |
 | discarded_at | timestamptz | Y |  |
 | discard_reason | varchar(1000) | Y |  |
+| _unique_ | (code) where status <> 'DISCARDED' | | |
 
 ### `meta.config_package_item`  (flags: —; audited)
 
