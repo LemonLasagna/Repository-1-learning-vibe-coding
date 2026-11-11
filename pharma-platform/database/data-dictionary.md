@@ -614,6 +614,9 @@
 | approval_signature_id | uuid | Y | FK → `esig.signature` |
 | exported_at | timestamptz | Y |  |
 | import_log | jsonb | Y |  |
+| discarded_by | uuid | Y |  |
+| discarded_at | timestamptz | Y |  |
+| discard_reason | varchar(1000) | Y |  |
 
 ### `meta.config_package_item`  (flags: —; audited)
 

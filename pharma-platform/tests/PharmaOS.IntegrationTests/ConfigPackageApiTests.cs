@@ -660,6 +660,100 @@ public sealed class ConfigPackageApiTests : IClassFixture<PostgresFixture>, IAsy
         Assert.True(there.GetProperty("production").GetBoolean());
     }
 
+    // ---- discard -----------------------------------------------------------------------------------------------------------------
+
+    private static async Task<HttpResponseMessage> DiscardAsync(PlatformFactory factory, TestUser user, Guid id, string? comment, string? etag = null)
+    {
+        var client = factory.ClientFor(user);
+        etag ??= (await client.GetAsync($"/api/config/v1/packages/{id}")).Headers.ETag?.Tag;
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/config/v1/packages/{id}/discard") { Content = JsonContent.Create(new { comment }) };
+        return await client.SendAsync(etag is null ? request : request.WithHeaders(ifMatch: etag));
+    }
+
+    [Fact]
+    public async Task Discarding_an_imported_package_sets_it_aside_with_the_reason_and_it_can_no_longer_be_deployed()
+    {
+        var version = await ReleaseCapaAsync(_source);
+        var id = await ImportAsync(_target, await ApprovedFileAsync(version));
+        var itemsBefore = await CountAsync(_targetDb, "meta.config_package_item");
+
+        var res = await DiscardAsync(_target, Admin, id, "  Imported the wrong release  ");
+
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        var body = await res.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("DISCARDED", body.GetProperty("status").GetString());
+        Assert.Equal("Imported the wrong release", body.GetProperty("discardReason").GetString());
+        Assert.Equal(Admin.Sub, body.GetProperty("discardedBy").GetGuid());
+        Assert.NotEqual(JsonValueKind.Null, body.GetProperty("discardedAt").ValueKind);
+        // Nothing is deleted, and nothing was deployed.
+        Assert.Equal(itemsBefore, await CountAsync(_targetDb, "meta.config_package_item"));
+        Assert.NotEqual(version, await CurrentCapaVersionAsync(_target));
+
+        var deploy = await DeployAsync(_target, Admin, id);
+        Assert.Equal(HttpStatusCode.Conflict, deploy.StatusCode);
+        Assert.Equal("WRONG_STATUS", await Authoring.CodeOf(deploy));
+        var shown = await PackageAsync(_target, id);
+        Assert.Equal("DISCARDED", shown.GetProperty("status").GetString());
+        Assert.Empty(shown.GetProperty("deployments").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Discarding_needs_a_reason_the_deploy_permission_and_the_version_last_read()
+    {
+        var version = await ReleaseCapaAsync(_source);
+        var id = await ImportAsync(_target, await ApprovedFileAsync(version));
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await DiscardAsync(_target, Admin, id, "   ")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await DiscardAsync(_target, Admin, id, new string('x', 1001))).StatusCode);
+
+        var denied = await DiscardAsync(_target, Approver, id, "no");
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+
+        var stale = await DiscardAsync(_target, Admin, id, "no", etag: "\"999\"");
+        Assert.Equal(HttpStatusCode.PreconditionFailed, stale.StatusCode);
+
+        var noEtag = await _target.ClientFor(Admin).PostAsJsonAsync($"/api/config/v1/packages/{id}/discard", new { comment = "no" });
+        Assert.Equal(HttpStatusCode.PreconditionRequired, noEtag.StatusCode);
+
+        Assert.Equal("IMPORTED", (await PackageAsync(_target, id)).GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task Only_an_imported_package_can_be_discarded()
+    {
+        var version = await ReleaseCapaAsync(_source);
+        var (built, _) = await BuildAsync(_source, NewCode(), version);
+        var draft = await DiscardAsync(_source, Admin, built, "no");
+        Assert.Equal(HttpStatusCode.Conflict, draft.StatusCode);
+        Assert.Equal("WRONG_STATUS", await Authoring.CodeOf(draft));
+
+        var deployed = await ImportAsync(_target, await ApprovedFileAsync(await ReleaseCapaAsync(_source)));
+        Assert.Equal(HttpStatusCode.Created, (await DeployAsync(_target, Admin, deployed)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await DiscardAsync(_target, Admin, deployed, "no")).StatusCode);
+
+        var discarded = await ImportAsync(_target, await ApprovedFileAsync(await ReleaseCapaAsync(_source)));
+        Assert.Equal(HttpStatusCode.OK, (await DiscardAsync(_target, Admin, discarded, "wrong one")).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await DiscardAsync(_target, Admin, discarded, "again")).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_discarded_package_cannot_be_imported_again_under_the_same_code_and_the_message_says_what_to_do()
+    {
+        var version = await ReleaseCapaAsync(_source);
+        var file = await ApprovedFileAsync(version);
+        var id = await ImportAsync(_target, file);
+        Assert.Equal(HttpStatusCode.OK, (await DiscardAsync(_target, Admin, id, "wrong release")).StatusCode);
+
+        var again = await _target.ClientFor(Admin).PostAsJsonAsync("/api/config/v1/packages/import", file);
+
+        Assert.Equal(HttpStatusCode.Conflict, again.StatusCode);
+        var problem = await again.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("PACKAGE_EXISTS", problem.GetProperty("code").GetString());
+        var detail = problem.GetProperty("detail").GetString()!;
+        Assert.Contains("discarded", detail);
+        Assert.Contains("new code", detail);
+    }
+
     // ---- production lock ------------------------------------------------------------------------------------------------------
 
     [Fact]

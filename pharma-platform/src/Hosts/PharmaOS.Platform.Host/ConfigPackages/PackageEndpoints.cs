@@ -38,6 +38,7 @@ public static partial class PackageEndpoints
             Problem(StatusCodes.Status400BadRequest, "SIGNATURE_REQUIRED", "Signature required",
                 $"Deploying a package is an electronic signature. Start it with POST /api/esig/v1/challenges (entity {PackageSignable.Entity}, recordId {id}, action {PackageSignable.Deploy}, meaning RELEASED)."))
             .RequireAuthorization(Permissions.ConfigPackageDeploy);
+        group.MapPost("{id:guid}/discard", Discard).RequireAuthorization(Permissions.ConfigPackageDeploy);
         group.MapPost("{id:guid}/export", Export).RequireAuthorization(Permissions.ConfigPackageAuthor);
         group.MapPost("import", Import).RequireAuthorization(Permissions.ConfigPackageAuthor);
     }
@@ -166,6 +167,44 @@ public static partial class PackageEndpoints
         return Results.Content(file.ToJsonString(), "application/json");
     }
 
+    public sealed record DiscardBody(string? Comment);
+
+    /// <summary>
+    /// Sets an imported package aside so it cannot be deployed. Nothing is deleted: the package, its import record and the reason stay,
+    /// and its code stays taken. Only a package that has not been deployed can be discarded, and the reason is required.
+    /// </summary>
+    private static async Task<IResult> Discard(
+        Guid id, DiscardBody? body, PlatformDbContext db, IGxpContextAccessor gxp, HttpContext http, CancellationToken ct)
+    {
+        if (gxp.Current is not { } ctx) return MissingIdentity();
+        if (!TryParseIfMatch(http, out var expected)) return IfMatchRequired();
+        var comment = body?.Comment?.Trim();
+        if (string.IsNullOrEmpty(comment)) return Invalid("comment", "Say why the package is discarded.");
+        if (comment.Length > 1000) return Invalid("comment", "At most 1000 characters.");
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var (conn, sqlTx) = Sql(db);
+        var store = new PackageStore(conn, sqlTx);
+        var row = await store.GetAsync(id, forUpdate: true, ct);
+        if (row is null) return Results.NotFound();
+        if (row.RowVersion != expected) return Stale("package");
+        if (row.Status != PackageStore.Imported)
+            return Problem(StatusCodes.Status409Conflict, "WRONG_STATUS", "Not possible in this status",
+                $"The package is {row.Status}; only an imported package that has not been deployed can be discarded.");
+
+        var columns = new Dictionary<string, object?>
+        {
+            ["status"] = PackageStore.Discarded, ["discarded_by"] = ctx.UserId, ["discarded_at"] = DateTimeOffset.UtcNow, ["discard_reason"] = comment,
+        };
+        if (!await store.SetAsync(id, expected, columns, ct)) return Stale("package");
+        var updated = (await store.GetAsync(id, forUpdate: false, ct))!;
+        var response = Response(updated, await store.DocumentAsync(updated, PackageSignable.PackagePlatformVersion(updated), ct));
+        await tx.CommitAsync(ct);
+
+        SetETag(http, updated.RowVersion);
+        return Results.Ok(response);
+    }
+
     /// <summary>
     /// Imports a package file. Nothing is stored unless the file is well formed, its hash matches, its signature is valid under a
     /// key this installation trusts, and every item passes a dry run against what is released here.
@@ -183,9 +222,11 @@ public static partial class PackageEndpoints
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var (conn, sqlTx) = Sql(db);
         var packages = new PackageStore(conn, sqlTx);
-        if (await packages.CodeExistsAsync(package.Document.Code, ct))
+        if (await packages.StatusOfCodeAsync(package.Document.Code, ct) is { } existing)
             return Problem(StatusCodes.Status409Conflict, "PACKAGE_EXISTS", "Package already here",
-                $"A package with code {package.Document.Code} already exists in this installation.");
+                existing == PackageStore.Discarded
+                    ? $"A package with code {package.Document.Code} was imported here and discarded. Package codes are not reused: build the package again under a new code in the source installation."
+                    : $"A package with code {package.Document.Code} already exists in this installation.");
 
         var report = await PackageDryRun.RunAsync(new WorkflowDraftStore(conn, sqlTx), new WorkflowStore(conn, sqlTx), package.Document, ct);
         if (report.Any(r => r.Outcome == PackageDryRun.Refused))
@@ -221,6 +262,7 @@ public static partial class PackageEndpoints
         contentHash = r.ContentHash, status = r.Status, manifest = r.Manifest, approvedBy = r.ApprovedBy, approvedAt = r.ApprovedAt,
         approvalSignatureId = r.ApprovalSignatureId, signingKeyVersion = r.SigningKeyVersion, exportedAt = r.ExportedAt,
         importLog = r.ImportLog, rowVersion = r.RowVersion, updatedAt = r.UpdatedAt,
+        discardedBy = r.DiscardedBy, discardedAt = r.DiscardedAt, discardReason = r.DiscardReason,
         items = document?.Items.Select(i => new { artifactType = i.ArtifactType, code = i.Code, version = i.Version }),
     };
 

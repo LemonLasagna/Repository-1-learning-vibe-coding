@@ -1,15 +1,16 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { inject, Injectable, InjectionToken } from '@angular/core';
 import { map, Observable } from 'rxjs';
 import { APP_CONFIG } from './api';
 
-export type PackageStatus = 'DRAFT' | 'APPROVED' | 'IMPORTED' | 'DEPLOYED';
+export type PackageStatus = 'DRAFT' | 'APPROVED' | 'IMPORTED' | 'DEPLOYED' | 'DISCARDED';
 
 export const PACKAGE_STATUS_LABELS: Record<PackageStatus, string> = {
   DRAFT: 'Built, waiting for approval',
   APPROVED: 'Approved and signed',
   IMPORTED: 'Imported, ready to deploy',
   DEPLOYED: 'Deployed',
+  DISCARDED: 'Discarded, will not be deployed',
 };
 
 export interface PackageItemRef {
@@ -58,6 +59,9 @@ export interface ConfigPackage {
   importLog: ImportLog | null;
   rowVersion: number;
   updatedAt: string;
+  discardedBy: string | null;
+  discardedAt: string | null;
+  discardReason: string | null;
   /** Only on a single package: its items and its deployments. */
   items?: PackageItemRef[];
   deployments?: Deployment[];
@@ -136,6 +140,15 @@ export class ConfigPackageApi {
   /** The package as a file. Kept as the server's text so the saved file is what the server wrote. */
   export(id: string): Observable<string> {
     return this.http.post(`${this.base}/${id}/export`, null, { responseType: 'text' });
+  }
+
+  /**
+   * Sets an imported package aside so it cannot be deployed. Nothing is deleted; the reason is kept. At the version last read, so a
+   * package someone else has changed meanwhile is not discarded by mistake.
+   */
+  discard(id: string, rowVersion: number, comment: string): Observable<ConfigPackage> {
+    const headers = new HttpHeaders({ 'If-Match': `"${rowVersion}"` });
+    return this.http.post<ConfigPackage>(`${this.base}/${id}/discard`, { comment }, { headers });
   }
 
   /** Imports the text of an exported file; the server refuses it, with reasons, unless hash, signature and dry run all pass. */

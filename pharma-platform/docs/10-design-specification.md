@@ -101,8 +101,9 @@ the signature against a configured list of trusted public keys, never the key wr
 same rules as workflow authoring. Deploy is an e-signature (RELEASED) that re-checks everything and releases the items atomically.
 In an environment named PROD, workflow authoring is read-only, and the workflow screens say so. The package screens (Packages in the
 menu) build, approve, export, import and deploy; approving and deploying are signed in the same e-signature dialog as other steps.
-Not built yet: other artefact types, dry-runs of in-flight record migrations (not needed for workflows, which pin their version per
-record), and discarding an imported package.
+An imported package that is not wanted is discarded with a reason (kept, not deleted; its code is not reused). Not built yet: other
+artefact types, discarding a package that was built but never approved, and dry-runs of in-flight record migrations (not needed for
+workflows, which pin their version per record).
 
 ## 10.5 E-signature design
 

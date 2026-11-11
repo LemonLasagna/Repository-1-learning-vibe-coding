@@ -10,7 +10,8 @@ public sealed record DeploymentRow(Guid Id, string TargetEnvironment, DateTimeOf
 public sealed record PackageRow(
     Guid Id, string Code, string Name, string VersionLabel, string SourceEnvironment, string ContentHash, string Status,
     JsonObject Manifest, string? Signature, string? SigningKeyName, int? SigningKeyVersion, Guid? ApprovedBy, DateTimeOffset? ApprovedAt,
-    Guid? ApprovalSignatureId, DateTimeOffset? ExportedAt, JsonNode? ImportLog, int RowVersion, DateTimeOffset UpdatedAt, Guid CreatedBy);
+    Guid? ApprovalSignatureId, DateTimeOffset? ExportedAt, JsonNode? ImportLog, int RowVersion, DateTimeOffset UpdatedAt, Guid CreatedBy,
+    Guid? DiscardedBy, DateTimeOffset? DiscardedAt, string? DiscardReason);
 
 /// <summary>Configuration packages in meta.config_package and meta.config_package_item, inside the caller's transaction.</summary>
 public sealed class PackageStore(NpgsqlConnection conn, NpgsqlTransaction tx)
@@ -19,11 +20,12 @@ public sealed class PackageStore(NpgsqlConnection conn, NpgsqlTransaction tx)
     public const string Approved = "APPROVED";
     public const string Imported = "IMPORTED";
     public const string Deployed = "DEPLOYED";
+    public const string Discarded = "DISCARDED";
 
     private const string Columns = """
         id, code, name, version_label, source_environment, content_hash, status, manifest::text, kms_signature, signing_key_name,
         signing_key_version, approved_by, approved_at, approval_signature_id, exported_at, import_log::text, row_version, updated_at,
-        created_by
+        created_by, discarded_by, discarded_at, discard_reason
         """;
 
     private NpgsqlCommand Cmd(string sql) => new(sql, conn, tx);
@@ -33,6 +35,14 @@ public sealed class PackageStore(NpgsqlConnection conn, NpgsqlTransaction tx)
         await using var cmd = Cmd("SELECT 1 FROM meta.config_package WHERE code = @code");
         cmd.Parameters.AddWithValue("code", code);
         return await cmd.ExecuteScalarAsync(ct) is not null;
+    }
+
+    /// <summary>The status of the package with this code, or null when there is none.</summary>
+    public async Task<string?> StatusOfCodeAsync(string code, CancellationToken ct)
+    {
+        await using var cmd = Cmd("SELECT status FROM meta.config_package WHERE code = @code");
+        cmd.Parameters.AddWithValue("code", code);
+        return await cmd.ExecuteScalarAsync(ct) as string;
     }
 
     /// <summary>Stores the package and its items. <paramref name="artifactIds"/> holds the source id of each item, by code and version.</summary>
@@ -174,5 +184,6 @@ public sealed class PackageStore(NpgsqlConnection conn, NpgsqlTransaction tx)
         JsonNode.Parse(r.GetString(7))!.AsObject(), r.IsDBNull(8) ? null : r.GetString(8), r.IsDBNull(9) ? null : r.GetString(9),
         r.IsDBNull(10) ? null : r.GetInt32(10), r.IsDBNull(11) ? null : r.GetGuid(11), r.IsDBNull(12) ? null : r.GetFieldValue<DateTimeOffset>(12),
         r.IsDBNull(13) ? null : r.GetGuid(13), r.IsDBNull(14) ? null : r.GetFieldValue<DateTimeOffset>(14),
-        r.IsDBNull(15) ? null : JsonNode.Parse(r.GetString(15)), r.GetInt32(16), r.GetFieldValue<DateTimeOffset>(17), r.GetGuid(18));
+        r.IsDBNull(15) ? null : JsonNode.Parse(r.GetString(15)), r.GetInt32(16), r.GetFieldValue<DateTimeOffset>(17), r.GetGuid(18),
+        r.IsDBNull(19) ? null : r.GetGuid(19), r.IsDBNull(20) ? null : r.GetFieldValue<DateTimeOffset>(20), r.IsDBNull(21) ? null : r.GetString(21));
 }
